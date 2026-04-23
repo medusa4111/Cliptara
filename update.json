@@ -1,0 +1,6 @@
+{
+  "version": "1.2.0",
+  "build": "5",
+  "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
+  "release_notes": "Initial public release with built-in update checker."
+}
