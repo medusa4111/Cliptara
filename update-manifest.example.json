@@ -1,6 +1,6 @@
 {
-  "version": "1.2.0",
-  "build": "5",
+  "version": "1.3.0",
+  "build": "6",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "Initial public release."
+  "release_notes": "Hotkey remapping fixes and built-in video compression."
 }

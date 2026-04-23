@@ -1,26 +1,35 @@
 # Cliptara
 
-Menu bar app for screenshots and screen recording.
+## Русский
 
-## Hotkeys
+Cliptara — приложение для macOS в строке меню, которое помогает быстро делать скриншоты, записывать экран и сжимать видеофайлы.
 
-- `Ctrl+\``: area screenshot
-- `Ctrl+1`: full-screen screenshot
-- `Ctrl+2`: start/stop video recording
+### Что умеет
 
-All hotkeys are configurable in Settings.
+- Скриншот области экрана по горячей клавише.
+- Скриншот всего экрана с визуальной вспышкой.
+- Запись видео экрана (старт/стоп одной горячей клавишей).
+- Сжатие видео до целевого размера в МБ из меню приложения.
+- Выбор действия для скриншота: копировать в буфер или сохранить в файл.
+- Выбор формата скриншотов: `PNG`, `JPG`, `WEBP`.
+- Настройка целевого битрейта видео.
+- Переназначение горячих клавиш прямо в окне настроек.
+- Проверка обновлений через GitHub Releases.
 
-## Default save folders
+### Горячие клавиши по умолчанию
 
-- Screenshots: `~/Documents/cliptaramaterials/Screenshots`
-- Videos: `~/Documents/cliptaramaterials/Videos`
+- `Ctrl+\`` — скриншот области
+- `Ctrl+1` — скриншот экрана
+- `Ctrl+2` — старт/стоп записи видео
 
-Screenshot action can be switched between:
+Все горячие клавиши можно изменить в настройках.
 
-- copy to clipboard
-- save to files
+### Папки по умолчанию
 
-## Build & Run
+- Скриншоты: `~/Documents/cliptaramaterials/Screenshots`
+- Видео: `~/Documents/cliptaramaterials/Videos`
+
+### Сборка и запуск
 
 ```bash
 cd /Volumes/JINNLIVEUSB/Cliptara/shot
@@ -28,15 +37,71 @@ swift build -c release
 .build/release/Cliptara
 ```
 
-## Updates (GitHub Releases)
-
-The app supports `Check for updates...` from the menu bar.
-
-1. Upload new `Cliptara.dmg` to GitHub Release.
-2. Publish `update.json` (use [update-manifest.example.json](./update-manifest.example.json) as template).
-3. Build app with manifest URL:
+### Упаковка `.dmg`
 
 ```bash
 cd /Volumes/JINNLIVEUSB/Cliptara/shot
-UPDATE_MANIFEST_URL="https://raw.githubusercontent.com/medusa4111/Cliptara/main/update.json" ./package_cliptara_dmg.sh
+./package_cliptara_dmg.sh
 ```
+
+Готовый файл: `dist/Cliptara.dmg`
+
+### Обновления через GitHub
+
+1. Загрузите новый `Cliptara.dmg` в GitHub Release.
+2. Обновите `update.json` в `main` (шаблон: [update-manifest.example.json](./update-manifest.example.json)).
+3. В приложении нажмите `Проверить обновления…`.
+
+---
+
+## English
+
+Cliptara is a macOS menu bar app for fast screenshots, screen recording, and quick video compression.
+
+### Features
+
+- Area screenshot via a global hotkey.
+- Full-screen screenshot with flash feedback.
+- Screen video recording (single start/stop hotkey).
+- Video compression to a target size (MB) from the app menu.
+- Screenshot action mode: copy to clipboard or save to file.
+- Screenshot formats: `PNG`, `JPG`, `WEBP`.
+- Configurable target video bitrate.
+- Rebindable hotkeys in Settings.
+- In-app update checks via GitHub Releases.
+
+### Default hotkeys
+
+- `Ctrl+\`` — area screenshot
+- `Ctrl+1` — full-screen screenshot
+- `Ctrl+2` — start/stop video recording
+
+All hotkeys can be changed in Settings.
+
+### Default folders
+
+- Screenshots: `~/Documents/cliptaramaterials/Screenshots`
+- Videos: `~/Documents/cliptaramaterials/Videos`
+
+### Build and run
+
+```bash
+cd /Volumes/JINNLIVEUSB/Cliptara/shot
+swift build -c release
+.build/release/Cliptara
+```
+
+### Build `.dmg`
+
+```bash
+cd /Volumes/JINNLIVEUSB/Cliptara/shot
+./package_cliptara_dmg.sh
+```
+
+Output file: `dist/Cliptara.dmg`
+
+### GitHub-based updates
+
+1. Upload a new `Cliptara.dmg` to a GitHub Release.
+2. Update `update.json` in `main` (template: [update-manifest.example.json](./update-manifest.example.json)).
+3. In the app menu, click `Check for updates…`.

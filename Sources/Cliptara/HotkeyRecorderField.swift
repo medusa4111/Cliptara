@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 final class HotkeyRecorderField: NSTextField {
     var hotkey: Hotkey {
@@ -8,6 +9,8 @@ final class HotkeyRecorderField: NSTextField {
     }
 
     var onAttemptChange: ((Hotkey) -> Bool)?
+    private var keyMonitor: Any?
+    private var isCapturing = false
 
     init(hotkey: Hotkey) {
         self.hotkey = hotkey
@@ -38,17 +41,24 @@ final class HotkeyRecorderField: NSTextField {
         window?.makeFirstResponder(self)
     }
 
-    override func keyDown(with event: NSEvent) {
-        guard let candidate = Hotkey.from(event: event) else {
-            NSSound.beep()
-            return
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            beginCaptureMode()
         }
+        return accepted
+    }
 
-        let isAccepted = onAttemptChange?(candidate) ?? true
-        if isAccepted {
-            hotkey = candidate
+    override func resignFirstResponder() -> Bool {
+        endCaptureMode(restoreDisplay: true)
+        return super.resignFirstResponder()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if isCapturing {
+            capture(event)
         } else {
-            NSSound.beep()
+            super.keyDown(with: event)
         }
     }
 
@@ -58,5 +68,57 @@ final class HotkeyRecorderField: NSTextField {
         }
         keyDown(with: event)
         return true
+    }
+
+    private func beginCaptureMode() {
+        guard !isCapturing else {
+            return
+        }
+
+        isCapturing = true
+        stringValue = Localizer.text("Нажмите сочетание…", "Press shortcut…")
+
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else {
+                return event
+            }
+            guard self.isCapturing else {
+                return event
+            }
+            self.capture(event)
+            return nil
+        }
+    }
+
+    private func endCaptureMode(restoreDisplay: Bool) {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+        isCapturing = false
+        if restoreDisplay {
+            stringValue = hotkey.displayString
+        }
+    }
+
+    private func capture(_ event: NSEvent) {
+        if event.keyCode == UInt16(kVK_Escape) {
+            endCaptureMode(restoreDisplay: true)
+            return
+        }
+
+        guard let candidate = Hotkey.from(event: event) else {
+            NSSound.beep()
+            return
+        }
+
+        let isAccepted = onAttemptChange?(candidate) ?? true
+        if isAccepted {
+            hotkey = candidate
+            window?.makeFirstResponder(nil)
+        } else {
+            NSSound.beep()
+            stringValue = hotkey.displayString
+        }
     }
 }

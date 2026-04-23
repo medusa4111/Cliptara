@@ -15,6 +15,8 @@ final class HotkeyManager {
 
     private var eventHandlerRef: EventHandlerRef?
     private var hotkeyRefs: [EventHotKeyRef] = []
+    private var currentConfiguration: HotkeyConfiguration?
+    private var isEnabled = true
 
     init() {
         installEventHandler()
@@ -28,11 +30,16 @@ final class HotkeyManager {
     }
 
     func registerHotkeys(configuration: HotkeyConfiguration) {
-        unregisterAll()
+        currentConfiguration = configuration
+        applyCurrentConfiguration()
+    }
 
-        register(hotkey: configuration.areaCapture, id: HotkeyID.area)
-        register(hotkey: configuration.fullCapture, id: HotkeyID.full)
-        register(hotkey: configuration.videoToggle, id: HotkeyID.videoToggle)
+    func setEnabled(_ enabled: Bool) {
+        guard isEnabled != enabled else {
+            return
+        }
+        isEnabled = enabled
+        applyCurrentConfiguration()
     }
 
     private func installEventHandler() {
@@ -113,5 +120,16 @@ final class HotkeyManager {
             UnregisterEventHotKey(ref)
         }
         hotkeyRefs.removeAll()
+    }
+
+    private func applyCurrentConfiguration() {
+        unregisterAll()
+        guard isEnabled, let configuration = currentConfiguration else {
+            return
+        }
+
+        register(hotkey: configuration.areaCapture, id: HotkeyID.area)
+        register(hotkey: configuration.fullCapture, id: HotkeyID.full)
+        register(hotkey: configuration.videoToggle, id: HotkeyID.videoToggle)
     }
 }

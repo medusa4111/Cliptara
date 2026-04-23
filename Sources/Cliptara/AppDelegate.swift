@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unchecked Sendable {
     private let settings = AppSettings.shared
     private let hotkeyManager = HotkeyManager()
     private let screenshotController = ScreenshotController()
@@ -16,9 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private var checkUpdatesMenuItem: NSMenuItem?
     private var openScreenshotsFolderMenuItem: NSMenuItem?
     private var openVideosFolderMenuItem: NSMenuItem?
+    private var compressVideoMenuItem: NSMenuItem?
     private var quitMenuItem: NSMenuItem?
 
     private var settingsWindowController: SettingsWindowController?
+    private var videoCompressionWindowController: VideoCompressionWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -26,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         buildStatusMenu()
         setupSettingsWindow()
+        setupVideoCompressionWindow()
         configureHotkeys()
         screenRecorder.onRecordingStateChanged = { [weak self] isRecording in
             Task { @MainActor in
@@ -73,6 +76,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         openVideosFolderItem.target = self
         menu.addItem(openVideosFolderItem)
 
+        let compressVideoItem = NSMenuItem(
+            title: "",
+            action: #selector(openVideoCompressor),
+            keyEquivalent: ""
+        )
+        compressVideoItem.target = self
+        menu.addItem(compressVideoItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
@@ -91,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         self.checkUpdatesMenuItem = checkUpdatesItem
         self.openScreenshotsFolderMenuItem = openScreenshotsFolderItem
         self.openVideosFolderMenuItem = openVideosFolderItem
+        self.compressVideoMenuItem = compressVideoItem
         self.quitMenuItem = quitItem
     }
 
@@ -155,6 +167,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
 
         settingsWindowController = controller
+        settingsWindowController?.window?.delegate = self
+    }
+
+    private func setupVideoCompressionWindow() {
+        videoCompressionWindowController = VideoCompressionWindowController(settings: settings)
     }
 
     private func configureHotkeys() {
@@ -311,6 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         checkUpdatesMenuItem?.title = Localizer.text("Проверить обновления…", "Check for updates…")
         openScreenshotsFolderMenuItem?.title = Localizer.text("Открыть папку со скриншотами", "Open screenshots folder")
         openVideosFolderMenuItem?.title = Localizer.text("Открыть папку с видео", "Open videos folder")
+        compressVideoMenuItem?.title = Localizer.text("Уменьшить размер видеофайла", "Reduce video file size")
         quitMenuItem?.title = Localizer.text("Выход", "Quit")
 
         if let button = statusItem?.button {
@@ -344,6 +362,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private func openVideosFolder() {
         settings.ensureMaterialsDirectories()
         NSWorkspace.shared.open(settings.videosDirectory)
+    }
+
+    @objc
+    private func openVideoCompressor() {
+        videoCompressionWindowController?.refreshLocalization()
+        videoCompressionWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc
@@ -483,5 +508,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         alert.informativeText = message
         alert.addButton(withTitle: Localizer.text("OK", "OK"))
         alert.runModal()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard isSettingsWindow(notification.object) else {
+            return
+        }
+        hotkeyManager.setEnabled(false)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard isSettingsWindow(notification.object) else {
+            return
+        }
+        hotkeyManager.setEnabled(true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard isSettingsWindow(notification.object) else {
+            return
+        }
+        hotkeyManager.setEnabled(true)
+    }
+
+    private func isSettingsWindow(_ object: Any?) -> Bool {
+        guard let window = object as? NSWindow else {
+            return false
+        }
+        return window === settingsWindowController?.window
     }
 }

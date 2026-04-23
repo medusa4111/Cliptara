@@ -17,7 +17,8 @@ BACKGROUND_PNG="$BACKGROUND_DIR/dmg-background.png"
 
 OUTPUT_DMG="$ROOT_DIR/dist/Cliptara.dmg"
 ICON_PNG="$ROOT_DIR/assets/cliptara-accent.png"
-UPDATE_MANIFEST_URL="${UPDATE_MANIFEST_URL:-}"
+DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/medusa4111/Cliptara/main/update.json"
+UPDATE_MANIFEST_URL="${UPDATE_MANIFEST_URL:-$DEFAULT_MANIFEST_URL}"
 
 if [[ ! -f "$ICON_PNG" ]]; then
   echo "Icon not found: $ICON_PNG"
@@ -96,9 +97,9 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.2.0</string>
+  <string>1.3.0</string>
   <key>CFBundleVersion</key>
-  <string>5</string>
+  <string>6</string>
   <key>CliptaraUpdateManifestURL</key>
   <string>$UPDATE_MANIFEST_URL</string>
   <key>LSMinimumSystemVersion</key>

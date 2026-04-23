@@ -73,6 +73,7 @@ enum UpdateManagerError: LocalizedError {
 @MainActor
 final class UpdateManager {
     private let urlSession = URLSession.shared
+    private let defaultManifestURLString = "https://raw.githubusercontent.com/medusa4111/Cliptara/main/update.json"
 
     func checkForUpdates() async throws -> UpdateCheckResult {
         let manifestURL = try resolveManifestURL()
@@ -122,19 +123,33 @@ final class UpdateManager {
     }
 
     private func resolveManifestURL() throws -> URL {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: "CliptaraUpdateManifestURL") as? String else {
-            throw UpdateManagerError.manifestURLNotConfigured
+        let configuredRaw = Bundle.main.object(forInfoDictionaryKey: "CliptaraUpdateManifestURL") as? String
+        let candidates = [configuredRaw, defaultManifestURLString]
+
+        for raw in candidates {
+            guard let raw else {
+                continue
+            }
+
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                continue
+            }
+
+            if let url = URL(string: trimmed),
+               let scheme = url.scheme,
+               scheme == "https" || scheme == "http" {
+                return url
+            }
         }
 
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            throw UpdateManagerError.manifestURLNotConfigured
+        if let configuredRaw {
+            let trimmed = configuredRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                throw UpdateManagerError.invalidManifestURL
+            }
         }
-        guard let url = URL(string: trimmed), let scheme = url.scheme,
-              scheme == "https" || scheme == "http" else {
-            throw UpdateManagerError.invalidManifestURL
-        }
-        return url
+        throw UpdateManagerError.manifestURLNotConfigured
     }
 
     private func downloadUpdatePackage(from remoteURL: URL, version: String) async throws -> URL {
