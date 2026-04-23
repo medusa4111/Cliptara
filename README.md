@@ -12,8 +12,8 @@ All hotkeys are configurable in Settings.
 
 ## Default save folders
 
-- Screenshots: `~/Documents/ishotmaterials/Screenshots`
-- Videos: `~/Documents/ishotmaterials/Videos`
+- Screenshots: `~/Documents/cliptaramaterials/Screenshots`
+- Videos: `~/Documents/cliptaramaterials/Videos`
 
 Screenshot action can be switched between:
 
@@ -25,7 +25,7 @@ Screenshot action can be switched between:
 ```bash
 cd /Volumes/JINNLIVEUSB/Cliptara/shot
 swift build -c release
-.build/release/iShot
+.build/release/Cliptara
 ```
 
 ## Updates (GitHub Releases)
@@ -38,5 +38,5 @@ The app supports `Check for updates...` from the menu bar.
 
 ```bash
 cd /Volumes/JINNLIVEUSB/Cliptara/shot
-UPDATE_MANIFEST_URL="https://raw.githubusercontent.com/medusa4111/Cliptara/main/update.json" ./package_ishot_dmg.sh
+UPDATE_MANIFEST_URL="https://raw.githubusercontent.com/medusa4111/Cliptara/main/update.json" ./package_cliptara_dmg.sh
 ```

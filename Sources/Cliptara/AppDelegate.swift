@@ -129,8 +129,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self?.settings.setScreenshotAction(action)
         }
 
+        controller.onScreenshotFormatChanged = { [weak self] format in
+            self?.settings.setScreenshotFileFormat(format)
+        }
+
         controller.onMuteScreenshotSoundChanged = { [weak self] value in
             self?.settings.setMuteScreenshotSound(value)
+        }
+
+        controller.onVideoBitrateChanged = { [weak self] bitrateKbps in
+            self?.settings.setVideoTargetBitrateKbps(bitrateKbps)
+            self?.settingsWindowController?.reloadFromSettings()
         }
 
         controller.onVideoAudioModeChanged = { [weak self] mode in
@@ -216,6 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         do {
             _ = try await screenshotController.captureSelectedArea(
                 action: settings.screenshotAction,
+                format: settings.screenshotFileFormat,
                 muteSound: settings.muteScreenshotSound,
                 directory: settings.screenshotsDirectory
             )
@@ -231,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         do {
             _ = try await screenshotController.captureFullScreen(
                 action: settings.screenshotAction,
+                format: settings.screenshotFileFormat,
                 muteSound: settings.muteScreenshotSound,
                 directory: settings.screenshotsDirectory
             )
@@ -266,6 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         do {
             _ = try await screenRecorder.startRecording(
                 audioMode: settings.videoAudioMode,
+                targetBitrateKbps: settings.videoTargetBitrateKbps,
                 outputDirectory: settings.videosDirectory
             )
         } catch {

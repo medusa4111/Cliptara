@@ -57,7 +57,11 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         isStopping
     }
 
-    func startRecording(audioMode: AudioCaptureMode, outputDirectory: URL) async throws -> URL {
+    func startRecording(
+        audioMode: AudioCaptureMode,
+        targetBitrateKbps: Int,
+        outputDirectory: URL
+    ) async throws -> URL {
         if stream != nil || isStopping {
             throw ScreenRecorderError.alreadyRecording
         }
@@ -68,7 +72,10 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             throw ScreenRecorderError.permissionDenied
         }
 
-        let (filter, configuration) = try await makeStreamSetup(audioMode: audioMode)
+        let (filter, configuration, preferredCodec) = try await makeStreamSetup(
+            audioMode: audioMode,
+            targetBitrateKbps: targetBitrateKbps
+        )
         let outputURL = makeOutputURL(directory: outputDirectory)
 
         if FileManager.default.fileExists(atPath: outputURL.path) {
@@ -80,8 +87,12 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         if recordingConfiguration.availableOutputFileTypes.contains(.mov) {
             recordingConfiguration.outputFileType = .mov
         }
-        if recordingConfiguration.availableVideoCodecTypes.contains(.h264) {
+        if recordingConfiguration.availableVideoCodecTypes.contains(preferredCodec) {
+            recordingConfiguration.videoCodecType = preferredCodec
+        } else if recordingConfiguration.availableVideoCodecTypes.contains(.h264) {
             recordingConfiguration.videoCodecType = .h264
+        } else if let fallbackCodec = recordingConfiguration.availableVideoCodecTypes.first {
+            recordingConfiguration.videoCodecType = fallbackCodec
         }
 
         let recordingOutput = SCRecordingOutput(configuration: recordingConfiguration, delegate: self)
@@ -172,19 +183,22 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
     private func waitForFinalizedVideo(at url: URL, timeout: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if isVideoFileReady(at: url) {
+            if await isVideoFileReady(at: url) {
                 return true
             }
             try? await Task.sleep(nanoseconds: 140_000_000)
         }
-        return isVideoFileReady(at: url)
+        return await isVideoFileReady(at: url)
     }
 
     private func notifyRecordingStateChange(isRecording: Bool) {
         onRecordingStateChanged?(isRecording)
     }
 
-    private func makeStreamSetup(audioMode: AudioCaptureMode) async throws -> (SCContentFilter, SCStreamConfiguration) {
+    private func makeStreamSetup(
+        audioMode: AudioCaptureMode,
+        targetBitrateKbps: Int
+    ) async throws -> (SCContentFilter, SCStreamConfiguration, AVVideoCodecType) {
         let shareableContent = try await SCShareableContent.current
 
         guard let display = chooseDisplay(from: shareableContent.displays) else {
@@ -192,11 +206,16 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         }
 
         let contentFilter = SCContentFilter(display: display, excludingWindows: [])
+        let captureProfile = makeCaptureProfile(
+            nativeWidth: Int(CGDisplayPixelsWide(display.displayID)),
+            nativeHeight: Int(CGDisplayPixelsHigh(display.displayID)),
+            targetBitrateKbps: targetBitrateKbps
+        )
 
         let streamConfig = SCStreamConfiguration()
-        streamConfig.width = CGDisplayPixelsWide(display.displayID)
-        streamConfig.height = CGDisplayPixelsHigh(display.displayID)
-        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        streamConfig.width = captureProfile.width
+        streamConfig.height = captureProfile.height
+        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(captureProfile.frameRate))
         streamConfig.showsCursor = true
         streamConfig.capturesAudio = audioMode.capturesSystemAudio
         streamConfig.excludesCurrentProcessAudio = false
@@ -207,7 +226,8 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             streamConfig.captureMicrophone = false
         }
 
-        return (contentFilter, streamConfig)
+        let preferredCodec: AVVideoCodecType = captureProfile.useHEVC ? .hevc : .h264
+        return (contentFilter, streamConfig, preferredCodec)
     }
 
     private func chooseDisplay(from displays: [SCDisplay]) -> SCDisplay? {
@@ -229,7 +249,7 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         return directory.appendingPathComponent(name)
     }
 
-    private func isVideoFileReady(at url: URL) -> Bool {
+    private func isVideoFileReady(at url: URL) async -> Bool {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return false
         }
@@ -241,12 +261,58 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         }
 
         let asset = AVURLAsset(url: url)
-        let videoTracks = asset.tracks(withMediaType: .video)
-        guard !videoTracks.isEmpty else {
+
+        do {
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            guard !videoTracks.isEmpty else {
+                return false
+            }
+
+            let duration = try await asset.load(.duration)
+            let seconds = CMTimeGetSeconds(duration)
+            return seconds.isFinite && seconds >= 0
+        } catch {
             return false
         }
-
-        let duration = CMTimeGetSeconds(asset.duration)
-        return duration.isFinite && duration >= 0
     }
+
+    private func makeCaptureProfile(
+        nativeWidth: Int,
+        nativeHeight: Int,
+        targetBitrateKbps: Int
+    ) -> CaptureProfile {
+        let bitrate = min(max(targetBitrateKbps, 800), 50_000)
+
+        let baselineBitrateKbps = 12_000.0
+        let ratio = min(max(Double(bitrate) / baselineBitrateKbps, 0.14), 1.0)
+        let scale = sqrt(ratio)
+
+        let minWidth = min(640, nativeWidth)
+        let minHeight = min(360, nativeHeight)
+
+        var width = Int((Double(nativeWidth) * scale).rounded(.down))
+        var height = Int((Double(nativeHeight) * scale).rounded(.down))
+
+        width = makeEven(max(minWidth, min(nativeWidth, width)))
+        height = makeEven(max(minHeight, min(nativeHeight, height)))
+
+        let frameRate = max(12, min(30, Int((Double(bitrate) / 220.0).rounded())))
+        let useHEVC = bitrate <= 12_000
+
+        return CaptureProfile(width: width, height: height, frameRate: frameRate, useHEVC: useHEVC)
+    }
+
+    private func makeEven(_ value: Int) -> Int {
+        if value <= 2 {
+            return 2
+        }
+        return value.isMultiple(of: 2) ? value : (value - 1)
+    }
+}
+
+private struct CaptureProfile {
+    let width: Int
+    let height: Int
+    let frameRate: Int
+    let useHEVC: Bool
 }

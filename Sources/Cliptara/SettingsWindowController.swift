@@ -2,13 +2,15 @@ import AppKit
 import Foundation
 
 @MainActor
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     var onAreaHotkeyChanged: ((Hotkey) -> Bool)?
     var onFullHotkeyChanged: ((Hotkey) -> Bool)?
     var onVideoHotkeyChanged: ((Hotkey) -> Bool)?
     var onLanguageChanged: ((AppLanguage) -> Void)?
     var onScreenshotActionChanged: ((ScreenshotAction) -> Void)?
+    var onScreenshotFormatChanged: ((ScreenshotFileFormat) -> Void)?
     var onMuteScreenshotSoundChanged: ((Bool) -> Void)?
+    var onVideoBitrateChanged: ((Int) -> Void)?
     var onVideoAudioModeChanged: ((AudioCaptureMode) -> Void)?
     var onChooseScreenshotsDirectory: (() -> Void)?
     var onChooseVideosDirectory: (() -> Void)?
@@ -20,7 +22,9 @@ final class SettingsWindowController: NSWindowController {
 
     private let languageLabel = NSTextField(labelWithString: "")
     private let screenshotActionLabel = NSTextField(labelWithString: "")
+    private let screenshotFormatLabel = NSTextField(labelWithString: "")
     private let muteSoundLabel = NSTextField(labelWithString: "")
+    private let videoBitrateLabel = NSTextField(labelWithString: "")
     private let videoAudioLabel = NSTextField(labelWithString: "")
     private let screenshotsFolderLabel = NSTextField(labelWithString: "")
     private let videosFolderLabel = NSTextField(labelWithString: "")
@@ -34,7 +38,9 @@ final class SettingsWindowController: NSWindowController {
 
     private let languagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let screenshotActionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let screenshotFormatPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let muteSoundSwitch = NSSwitch(frame: .zero)
+    private let videoBitrateField = NSTextField(string: "")
     private let videoAudioPopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
     private let screenshotsPathField = NSTextField(labelWithString: "")
@@ -53,6 +59,7 @@ final class SettingsWindowController: NSWindowController {
         .arabic
     ]
     private let screenshotActionOptions: [ScreenshotAction] = [.copyToClipboard, .saveToFiles]
+    private let screenshotFormatOptions: [ScreenshotFileFormat] = [.png, .jpg, .webp]
     private let audioOptions: [AudioCaptureMode] = [.system, .silent]
 
     init(settings: AppSettings) {
@@ -87,10 +94,14 @@ final class SettingsWindowController: NSWindowController {
         if let actionIndex = screenshotActionOptions.firstIndex(of: settings.screenshotAction) {
             screenshotActionPopup.selectItem(at: actionIndex)
         }
+        if let formatIndex = screenshotFormatOptions.firstIndex(of: settings.screenshotFileFormat) {
+            screenshotFormatPopup.selectItem(at: formatIndex)
+        }
         if let audioIndex = audioOptions.firstIndex(of: settings.videoAudioMode) {
             videoAudioPopup.selectItem(at: audioIndex)
         }
 
+        videoBitrateField.stringValue = "\(settings.videoTargetBitrateKbps)"
         screenshotsPathField.stringValue = settings.screenshotsDirectory.path
         videosPathField.stringValue = settings.videosDirectory.path
     }
@@ -105,7 +116,9 @@ final class SettingsWindowController: NSWindowController {
 
         languageLabel.stringValue = Localizer.text("Язык:", "Language:")
         screenshotActionLabel.stringValue = Localizer.text("Действия со скриншотами:", "Screenshot action:")
+        screenshotFormatLabel.stringValue = Localizer.text("Формат скриншота:", "Screenshot format:")
         muteSoundLabel.stringValue = Localizer.text("Выключить звук скриншота:", "Mute screenshot sound:")
+        videoBitrateLabel.stringValue = Localizer.text("Битрейт видео (кбит/с):", "Video bitrate (kbps):")
         videoAudioLabel.stringValue = Localizer.text("Звук видео:", "Video audio:")
         screenshotsFolderLabel.stringValue = Localizer.text("Папка скриншотов:", "Screenshots folder:")
         videosFolderLabel.stringValue = Localizer.text("Папка видео:", "Videos folder:")
@@ -118,6 +131,7 @@ final class SettingsWindowController: NSWindowController {
 
         rebuildLanguagePopupTitles()
         rebuildScreenshotActionPopupTitles()
+        rebuildScreenshotFormatPopupTitles()
         rebuildAudioPopupTitles()
 
         reloadFromSettings()
@@ -125,7 +139,7 @@ final class SettingsWindowController: NSWindowController {
 
     private func buildWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 660, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -164,6 +178,8 @@ final class SettingsWindowController: NSWindowController {
         videoField.translatesAutoresizingMaskIntoConstraints = false
         languagePopup.translatesAutoresizingMaskIntoConstraints = false
         screenshotActionPopup.translatesAutoresizingMaskIntoConstraints = false
+        screenshotFormatPopup.translatesAutoresizingMaskIntoConstraints = false
+        videoBitrateField.translatesAutoresizingMaskIntoConstraints = false
         videoAudioPopup.translatesAutoresizingMaskIntoConstraints = false
 
         areaField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
@@ -171,6 +187,8 @@ final class SettingsWindowController: NSWindowController {
         videoField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
         languagePopup.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
         screenshotActionPopup.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
+        screenshotFormatPopup.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
+        videoBitrateField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
         videoAudioPopup.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
 
         let hotkeysGrid = NSGridView(views: [
@@ -206,11 +224,14 @@ final class SettingsWindowController: NSWindowController {
 
         let screenshotsFolderControl = makeFolderControl(pathField: screenshotsPathField, button: chooseScreenshotsButton, width: controlsWidth)
         let videosFolderControl = makeFolderControl(pathField: videosPathField, button: chooseVideosButton, width: controlsWidth)
+        let bitrateControl = makeBitrateControl(width: controlsWidth)
 
         let optionsGrid = NSGridView(views: [
             [languageLabel, languagePopup],
             [screenshotActionLabel, screenshotActionPopup],
+            [screenshotFormatLabel, screenshotFormatPopup],
             [muteSoundLabel, muteContainer],
+            [videoBitrateLabel, bitrateControl],
             [videoAudioLabel, videoAudioPopup],
             [screenshotsFolderLabel, screenshotsFolderControl],
             [videosFolderLabel, videosFolderControl]
@@ -295,6 +316,40 @@ final class SettingsWindowController: NSWindowController {
         return container
     }
 
+    private func makeBitrateControl(width: CGFloat) -> NSView {
+        videoBitrateField.isBezeled = true
+        videoBitrateField.isEditable = true
+        videoBitrateField.isSelectable = true
+        videoBitrateField.alignment = .right
+        videoBitrateField.font = NSFont.systemFont(ofSize: 12)
+
+        let suffixLabel = NSTextField(labelWithString: "kbps")
+        suffixLabel.textColor = .secondaryLabelColor
+        suffixLabel.font = NSFont.systemFont(ofSize: 12)
+
+        let stack = NSStackView(views: [videoBitrateField, suffixLabel])
+        stack.orientation = .horizontal
+        stack.spacing = 8
+        stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        videoBitrateField.widthAnchor.constraint(equalToConstant: width - 56).isActive = true
+
+        let container = NSView(frame: .zero)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.widthAnchor.constraint(equalToConstant: width).isActive = true
+        container.heightAnchor.constraint(equalToConstant: 28).isActive = true
+
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        return container
+    }
+
     private func bindActions() {
         areaField.onAttemptChange = { [weak self] hotkey in
             self?.onAreaHotkeyChanged?(hotkey) ?? false
@@ -314,8 +369,15 @@ final class SettingsWindowController: NSWindowController {
         screenshotActionPopup.target = self
         screenshotActionPopup.action = #selector(screenshotActionPopupChanged)
 
+        screenshotFormatPopup.target = self
+        screenshotFormatPopup.action = #selector(screenshotFormatPopupChanged)
+
         muteSoundSwitch.target = self
         muteSoundSwitch.action = #selector(muteSoundSwitchChanged)
+
+        videoBitrateField.target = self
+        videoBitrateField.action = #selector(videoBitrateFieldChanged)
+        videoBitrateField.delegate = self
 
         videoAudioPopup.target = self
         videoAudioPopup.action = #selector(videoAudioPopupChanged)
@@ -352,6 +414,17 @@ final class SettingsWindowController: NSWindowController {
         }
     }
 
+    private func rebuildScreenshotFormatPopupTitles() {
+        let selected = screenshotFormatOptions[safe: screenshotFormatPopup.indexOfSelectedItem] ?? AppSettings.shared.screenshotFileFormat
+
+        screenshotFormatPopup.removeAllItems()
+        screenshotFormatPopup.addItems(withTitles: screenshotFormatOptions.map { $0.title })
+
+        if let index = screenshotFormatOptions.firstIndex(of: selected) {
+            screenshotFormatPopup.selectItem(at: index)
+        }
+    }
+
     private func rebuildAudioPopupTitles() {
         let selected = audioOptions[safe: videoAudioPopup.indexOfSelectedItem] ?? AppSettings.shared.videoAudioMode
 
@@ -382,8 +455,33 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc
+    private func screenshotFormatPopupChanged() {
+        guard screenshotFormatPopup.indexOfSelectedItem >= 0,
+              screenshotFormatPopup.indexOfSelectedItem < screenshotFormatOptions.count else {
+            return
+        }
+        onScreenshotFormatChanged?(screenshotFormatOptions[screenshotFormatPopup.indexOfSelectedItem])
+    }
+
+    @objc
     private func muteSoundSwitchChanged() {
         onMuteScreenshotSoundChanged?(muteSoundSwitch.state == .on)
+    }
+
+    @objc
+    private func videoBitrateFieldChanged() {
+        let value = Int(videoBitrateField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+            ?? AppSettings.shared.videoTargetBitrateKbps
+        let clamped = min(max(value, 800), 50_000)
+        videoBitrateField.stringValue = "\(clamped)"
+        onVideoBitrateChanged?(clamped)
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === videoBitrateField else {
+            return
+        }
+        videoBitrateFieldChanged()
     }
 
     @objc

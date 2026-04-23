@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export COPYFILE_DISABLE=1
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -15,7 +16,7 @@ BACKGROUND_SRC="$DIST_DIR/dmg-bg-src.png"
 BACKGROUND_PNG="$BACKGROUND_DIR/dmg-background.png"
 
 OUTPUT_DMG="$ROOT_DIR/dist/Cliptara.dmg"
-ICON_PNG="/Users/maksim/Documents/вопросы/сайт/assets/ishot-accent.png"
+ICON_PNG="$ROOT_DIR/assets/cliptara-accent.png"
 UPDATE_MANIFEST_URL="${UPDATE_MANIFEST_URL:-}"
 
 if [[ ! -f "$ICON_PNG" ]]; then
@@ -68,9 +69,10 @@ iconutil -c icns "$ICONSET_DIR" -o "$ICNS_PATH"
 
 echo "==> Building Cliptara.app"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-cp "$ROOT_DIR/.build/release/iShot" "$APP_DIR/Contents/MacOS/Cliptara"
+cp "$ROOT_DIR/.build/release/Cliptara" "$APP_DIR/Contents/MacOS/Cliptara"
 chmod +x "$APP_DIR/Contents/MacOS/Cliptara"
 cp "$ICNS_PATH" "$APP_DIR/Contents/Resources/Cliptara.icns"
+find "$APP_DIR" -name '._*' -type f -delete || true
 
 cat >"$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -107,6 +109,7 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+find "$APP_DIR" -name '._*' -type f -delete || true
 codesign --force --deep --sign - "$APP_DIR"
 
 echo "==> Preparing DMG staging"
@@ -190,7 +193,6 @@ trap - EXIT
 echo "==> Converting to compressed DMG"
 hdiutil convert "$TMP_RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUTPUT_DMG" >/dev/null
 rm -f "$TMP_RW_DMG"
-cp -f "$OUTPUT_DMG" "$ROOT_DIR/dist/iShot.dmg"
 
 echo "Done:"
 echo "  App: $APP_DIR"

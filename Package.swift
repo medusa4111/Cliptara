@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "iShot",
+    name: "Cliptara",
     platforms: [
         .macOS(.v15)
     ],
     products: [
-        .executable(name: "iShot", targets: ["iShot"])
+        .executable(name: "Cliptara", targets: ["Cliptara"])
     ],
     targets: [
         .executableTarget(
-            name: "iShot",
-            path: "Sources/iShot"
+            name: "Cliptara",
+            path: "Sources/Cliptara"
         )
     ]
 )
