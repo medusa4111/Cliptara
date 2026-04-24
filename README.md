@@ -1,3 +1,5 @@
+![Cliptara Preview](./assets/social-preview.png)
+
 # Cliptara
 
 Cliptara is a macOS menu bar app for screenshots, screen recording, and fast video compression.
