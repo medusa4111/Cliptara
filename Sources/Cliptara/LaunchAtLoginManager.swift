@@ -1,9 +1,12 @@
 import Foundation
+import ServiceManagement
 
 enum LaunchAtLoginError: LocalizedError {
     case executableNotFound
     case writeFailed
     case removeFailed
+    case registerFailed(String)
+    case unregisterFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +25,16 @@ enum LaunchAtLoginError: LocalizedError {
                 "Не удалось выключить автозапуск.",
                 "Could not disable launch at login."
             )
+        case .registerFailed(let details):
+            return Localizer.text(
+                "Не удалось включить автозапуск.\n\(details)",
+                "Could not enable launch at login.\n\(details)"
+            )
+        case .unregisterFailed(let details):
+            return Localizer.text(
+                "Не удалось выключить автозапуск.\n\(details)",
+                "Could not disable launch at login.\n\(details)"
+            )
         }
     }
 }
@@ -30,15 +43,50 @@ final class LaunchAtLoginManager {
     private let fileManager = FileManager.default
 
     func isEnabled() -> Bool {
-        fileManager.fileExists(atPath: launchAgentURL.path)
+        if #available(macOS 13.0, *) {
+            switch SMAppService.mainApp.status {
+            case .enabled, .requiresApproval:
+                return true
+            case .notFound, .notRegistered:
+                return false
+            @unknown default:
+                return false
+            }
+        }
+        return fileManager.fileExists(atPath: launchAgentURL.path)
     }
 
     func setEnabled(_ enabled: Bool) throws {
+        if #available(macOS 13.0, *) {
+            let service = SMAppService.mainApp
+            do {
+                if enabled {
+                    if service.status != .enabled && service.status != .requiresApproval {
+                        try service.register()
+                    }
+                } else {
+                    if service.status != .notRegistered {
+                        try service.unregister()
+                    }
+                }
+            } catch {
+                if enabled {
+                    throw LaunchAtLoginError.registerFailed(error.localizedDescription)
+                } else {
+                    throw LaunchAtLoginError.unregisterFailed(error.localizedDescription)
+                }
+            }
+
+            // Remove old LaunchAgent-based setup from previous versions to avoid duplicate autostart.
+            try? removeLaunchAgent()
+            return
+        }
+
         if enabled {
             try installLaunchAgent()
-        } else {
-            try removeLaunchAgent()
+            return
         }
+        try removeLaunchAgent()
     }
 
     private var launchAgentURL: URL {

@@ -19,6 +19,7 @@ OUTPUT_DMG="$ROOT_DIR/dist/Cliptara.dmg"
 ICON_PNG="$ROOT_DIR/assets/cliptara-accent.png"
 DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/medusa4111/Cliptara/main/update.json"
 UPDATE_MANIFEST_URL="${UPDATE_MANIFEST_URL:-$DEFAULT_MANIFEST_URL}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 if [[ ! -f "$ICON_PNG" ]]; then
   echo "Icon not found: $ICON_PNG"
@@ -111,7 +112,14 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
 PLIST
 
 find "$APP_DIR" -name '._*' -type f -delete || true
-codesign --force --deep --sign - "$APP_DIR"
+if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
+  echo "==> Signing app (ad-hoc)"
+  echo "warning: ad-hoc signing can make macOS request permissions again after app updates."
+  codesign --force --deep --sign - "$APP_DIR"
+else
+  echo "==> Signing app with identity: $CODESIGN_IDENTITY"
+  codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_DIR"
+fi
 
 echo "==> Preparing DMG staging"
 mkdir -p "$STAGING_DIR"
