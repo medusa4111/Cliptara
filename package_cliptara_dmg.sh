@@ -20,10 +20,31 @@ ICON_PNG="$ROOT_DIR/assets/cliptara-accent.png"
 DEFAULT_MANIFEST_URL="https://raw.githubusercontent.com/medusa4111/Cliptara/main/update.json"
 UPDATE_MANIFEST_URL="${UPDATE_MANIFEST_URL:-$DEFAULT_MANIFEST_URL}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+ALLOW_ADHOC_SIGNING="${ALLOW_ADHOC_SIGNING:-0}"
 
 if [[ ! -f "$ICON_PNG" ]]; then
   echo "Icon not found: $ICON_PNG"
   exit 1
+fi
+
+if [[ "$CODESIGN_IDENTITY" == "-" && "$ALLOW_ADHOC_SIGNING" != "1" ]]; then
+  echo "error: CODESIGN_IDENTITY is not set."
+  echo "Set a stable signing identity to keep macOS permissions across updates."
+  echo "Example:"
+  echo "  CODESIGN_IDENTITY=\"Developer ID Application: YOUR NAME (TEAMID)\" ./package_cliptara_dmg.sh"
+  echo
+  echo "For local testing only (not for release):"
+  echo "  ALLOW_ADHOC_SIGNING=1 ./package_cliptara_dmg.sh"
+  exit 2
+fi
+
+if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
+  if ! security find-identity -v -p codesigning | grep -F "\"$CODESIGN_IDENTITY\"" >/dev/null; then
+    echo "error: signing identity not found in keychain:"
+    echo "  $CODESIGN_IDENTITY"
+    echo "Run: security find-identity -v -p codesigning"
+    exit 3
+  fi
 fi
 
 detach_image_if_mounted() {
@@ -114,7 +135,8 @@ PLIST
 find "$APP_DIR" -name '._*' -type f -delete || true
 if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
   echo "==> Signing app (ad-hoc)"
-  echo "warning: ad-hoc signing can make macOS request permissions again after app updates."
+  echo "warning: ad-hoc signing is enabled explicitly (ALLOW_ADHOC_SIGNING=1)."
+  echo "warning: macOS permissions may reset after updates."
   codesign --force --deep --sign - "$APP_DIR"
 else
   echo "==> Signing app with identity: $CODESIGN_IDENTITY"
