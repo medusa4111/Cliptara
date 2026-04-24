@@ -120,9 +120,9 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.3.2</string>
+  <string>1.3.3</string>
   <key>CFBundleVersion</key>
-  <string>8</string>
+  <string>9</string>
   <key>CliptaraUpdateManifestURL</key>
   <string>$UPDATE_MANIFEST_URL</string>
   <key>LSMinimumSystemVersion</key>
