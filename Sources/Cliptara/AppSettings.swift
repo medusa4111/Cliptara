@@ -7,6 +7,13 @@ final class AppSettings: @unchecked Sendable {
         static let language = "appLanguage"
         static let muteScreenshotSound = "muteScreenshotSound"
         static let videoAudioMode = "videoAudioMode"
+        static let videoFileFormat = "videoFileFormat"
+        static let videoCodec = "videoCodec"
+        static let videoFrameRate = "videoFrameRate"
+        static let videoQualityPreset = "videoQualityPreset"
+        static let videoStartDelaySeconds = "videoStartDelaySeconds"
+        static let videoShowCursor = "videoShowCursor"
+        static let autoOpenRecordedVideo = "autoOpenRecordedVideo"
         static let launchAtLogin = "launchAtLogin"
         static let hotkeys = "hotkeys"
         static let screenshotAction = "screenshotAction"
@@ -21,6 +28,13 @@ final class AppSettings: @unchecked Sendable {
     private(set) var language: AppLanguage
     private(set) var muteScreenshotSound: Bool
     private(set) var videoAudioMode: AudioCaptureMode
+    private(set) var videoFileFormat: VideoFileFormat
+    private(set) var videoCodec: VideoCodecOption
+    private(set) var videoFrameRate: VideoFrameRateOption
+    private(set) var videoQualityPreset: VideoQualityPreset
+    private(set) var videoStartDelaySeconds: Int
+    private(set) var videoShowCursor: Bool
+    private(set) var autoOpenRecordedVideo: Bool
     private(set) var launchAtLogin: Bool
     private(set) var hotkeys: HotkeyConfiguration
     private(set) var screenshotAction: ScreenshotAction
@@ -56,6 +70,51 @@ final class AppSettings: @unchecked Sendable {
             defaults.set(videoAudioMode.rawValue, forKey: Keys.videoAudioMode)
         }
 
+        if let raw = defaults.string(forKey: Keys.videoFileFormat),
+           let parsed = VideoFileFormat(rawValue: raw) {
+            videoFileFormat = parsed
+        } else {
+            videoFileFormat = .mp4
+            defaults.set(videoFileFormat.rawValue, forKey: Keys.videoFileFormat)
+        }
+
+        if let raw = defaults.string(forKey: Keys.videoCodec),
+           let parsed = VideoCodecOption(rawValue: raw) {
+            videoCodec = parsed
+        } else {
+            videoCodec = .h264
+            defaults.set(videoCodec.rawValue, forKey: Keys.videoCodec)
+        }
+
+        if let raw = defaults.string(forKey: Keys.videoFrameRate),
+           let parsed = VideoFrameRateOption(rawValue: raw) {
+            videoFrameRate = parsed
+        } else {
+            videoFrameRate = .fps30
+            defaults.set(videoFrameRate.rawValue, forKey: Keys.videoFrameRate)
+        }
+
+        let storedQualityRaw = defaults.string(forKey: Keys.videoQualityPreset)
+        if let raw = storedQualityRaw,
+           let parsed = VideoQualityPreset(rawValue: raw) {
+            videoQualityPreset = parsed
+        } else {
+            videoQualityPreset = .balanced
+            defaults.set(videoQualityPreset.rawValue, forKey: Keys.videoQualityPreset)
+        }
+
+        let storedDelay = defaults.object(forKey: Keys.videoStartDelaySeconds) as? Int
+            ?? defaults.integer(forKey: Keys.videoStartDelaySeconds)
+        let allowedDelayValues = Set(VideoStartDelayOption.allCases.map(\.rawValue))
+        videoStartDelaySeconds = allowedDelayValues.contains(storedDelay) ? storedDelay : 0
+        defaults.set(videoStartDelaySeconds, forKey: Keys.videoStartDelaySeconds)
+
+        videoShowCursor = defaults.object(forKey: Keys.videoShowCursor) as? Bool ?? true
+        defaults.set(videoShowCursor, forKey: Keys.videoShowCursor)
+
+        autoOpenRecordedVideo = defaults.object(forKey: Keys.autoOpenRecordedVideo) as? Bool ?? false
+        defaults.set(autoOpenRecordedVideo, forKey: Keys.autoOpenRecordedVideo)
+
         launchAtLogin = defaults.object(forKey: Keys.launchAtLogin) as? Bool ?? false
 
         if let data = defaults.data(forKey: Keys.hotkeys),
@@ -89,7 +148,11 @@ final class AppSettings: @unchecked Sendable {
         if storedBitrate > 0 {
             videoTargetBitrateKbps = Self.clampedBitrateKbps(storedBitrate)
         } else {
-            videoTargetBitrateKbps = 6000
+            videoTargetBitrateKbps = videoQualityPreset.targetBitrateKbps
+        }
+        if storedQualityRaw == nil, storedBitrate > 0 {
+            videoQualityPreset = Self.qualityPreset(forBitrateKbps: videoTargetBitrateKbps)
+            defaults.set(videoQualityPreset.rawValue, forKey: Keys.videoQualityPreset)
         }
         defaults.set(videoTargetBitrateKbps, forKey: Keys.videoTargetBitrateKbps)
 
@@ -148,6 +211,43 @@ final class AppSettings: @unchecked Sendable {
     func setVideoAudioMode(_ mode: AudioCaptureMode) {
         videoAudioMode = mode
         defaults.set(mode.rawValue, forKey: Keys.videoAudioMode)
+    }
+
+    func setVideoFileFormat(_ format: VideoFileFormat) {
+        videoFileFormat = format
+        defaults.set(format.rawValue, forKey: Keys.videoFileFormat)
+    }
+
+    func setVideoCodec(_ codec: VideoCodecOption) {
+        videoCodec = codec
+        defaults.set(codec.rawValue, forKey: Keys.videoCodec)
+    }
+
+    func setVideoFrameRate(_ frameRate: VideoFrameRateOption) {
+        videoFrameRate = frameRate
+        defaults.set(frameRate.rawValue, forKey: Keys.videoFrameRate)
+    }
+
+    func setVideoQualityPreset(_ preset: VideoQualityPreset) {
+        videoQualityPreset = preset
+        defaults.set(preset.rawValue, forKey: Keys.videoQualityPreset)
+        setVideoTargetBitrateKbps(preset.targetBitrateKbps)
+    }
+
+    func setVideoStartDelaySeconds(_ seconds: Int) {
+        let allowed = Set(VideoStartDelayOption.allCases.map(\.rawValue))
+        videoStartDelaySeconds = allowed.contains(seconds) ? seconds : 0
+        defaults.set(videoStartDelaySeconds, forKey: Keys.videoStartDelaySeconds)
+    }
+
+    func setVideoShowCursor(_ value: Bool) {
+        videoShowCursor = value
+        defaults.set(value, forKey: Keys.videoShowCursor)
+    }
+
+    func setAutoOpenRecordedVideo(_ value: Bool) {
+        autoOpenRecordedVideo = value
+        defaults.set(value, forKey: Keys.autoOpenRecordedVideo)
     }
 
     func setLaunchAtLogin(_ value: Bool) {
@@ -213,6 +313,16 @@ final class AppSettings: @unchecked Sendable {
 
     private static func clampedBitrateKbps(_ value: Int) -> Int {
         min(max(value, 800), 50_000)
+    }
+
+    private static func qualityPreset(forBitrateKbps bitrate: Int) -> VideoQualityPreset {
+        if bitrate >= 10_000 {
+            return .high
+        }
+        if bitrate >= 5_500 {
+            return .balanced
+        }
+        return .small
     }
 
     private func migrateLegacyMaterials(

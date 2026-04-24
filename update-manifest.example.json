@@ -1,6 +1,6 @@
 {
-  "version": "1.3.3",
-  "build": "9",
+  "version": "1.4.0",
+  "build": "10",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "Switched release packaging to stable signing identity by default to prevent permission resets after updates. Includes launch-at-login fixes."
+  "release_notes": "New Video settings tab: MP4/MOV format, H.264/HEVC codec, 24/30/60 FPS, quality presets, start countdown, cursor toggle, auto-open after recording, and separate pause/resume hotkey."
 }

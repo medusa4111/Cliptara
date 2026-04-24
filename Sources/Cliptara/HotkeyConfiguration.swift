@@ -121,17 +121,20 @@ struct HotkeyConfiguration: Codable, Equatable {
     var areaCapture: Hotkey
     var fullCapture: Hotkey
     var videoToggle: Hotkey
+    var videoPauseResume: Hotkey
 
     private enum CodingKeys: String, CodingKey {
         case areaCapture
         case fullCapture
         case videoToggle
+        case videoPauseResume
     }
 
-    init(areaCapture: Hotkey, fullCapture: Hotkey, videoToggle: Hotkey) {
+    init(areaCapture: Hotkey, fullCapture: Hotkey, videoToggle: Hotkey, videoPauseResume: Hotkey) {
         self.areaCapture = areaCapture
         self.fullCapture = fullCapture
         self.videoToggle = videoToggle
+        self.videoPauseResume = videoPauseResume
     }
 
     init(from decoder: Decoder) throws {
@@ -140,11 +143,14 @@ struct HotkeyConfiguration: Codable, Equatable {
         fullCapture = try container.decode(Hotkey.self, forKey: .fullCapture)
         videoToggle = try container.decodeIfPresent(Hotkey.self, forKey: .videoToggle)
             ?? Hotkey(keyCode: UInt32(kVK_ANSI_2), carbonModifiers: UInt32(controlKey))
+        videoPauseResume = try container.decodeIfPresent(Hotkey.self, forKey: .videoPauseResume)
+            ?? Hotkey(keyCode: UInt32(kVK_ANSI_3), carbonModifiers: UInt32(controlKey))
     }
 
     static let `default` = HotkeyConfiguration(
         areaCapture: Hotkey(keyCode: UInt32(kVK_ANSI_Grave), carbonModifiers: UInt32(controlKey)),
         fullCapture: Hotkey(keyCode: UInt32(kVK_ANSI_1), carbonModifiers: UInt32(controlKey)),
-        videoToggle: Hotkey(keyCode: UInt32(kVK_ANSI_2), carbonModifiers: UInt32(controlKey))
+        videoToggle: Hotkey(keyCode: UInt32(kVK_ANSI_2), carbonModifiers: UInt32(controlKey)),
+        videoPauseResume: Hotkey(keyCode: UInt32(kVK_ANSI_3), carbonModifiers: UInt32(controlKey))
     )
 }

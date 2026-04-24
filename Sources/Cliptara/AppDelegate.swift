@@ -32,67 +32,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         setupVideoCompressionWindow()
         configureHotkeys()
         applyStoredLaunchAtLoginState()
-        screenRecorder.onRecordingStateChanged = { [weak self] isRecording in
+
+        screenRecorder.onRecordingStateChanged = { [weak self] state in
             Task { @MainActor in
-                self?.setStatusItemRecordingState(isRecording: isRecording)
+                self?.setStatusItemRecordingState(state: state)
             }
         }
 
         refreshMenuLocalization()
-        setStatusItemRecordingState(isRecording: false)
+        setStatusItemRecordingState(state: .idle)
     }
 
     private func buildStatusMenu() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
 
-        let settingsItem = NSMenuItem(
-            title: "",
-            action: #selector(openSettings),
-            keyEquivalent: ","
-        )
+        let settingsItem = NSMenuItem(title: "", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let checkUpdatesItem = NSMenuItem(
-            title: "",
-            action: #selector(checkForUpdatesAction),
-            keyEquivalent: ""
-        )
+        let checkUpdatesItem = NSMenuItem(title: "", action: #selector(checkForUpdatesAction), keyEquivalent: "")
         checkUpdatesItem.target = self
         menu.addItem(checkUpdatesItem)
 
-        let openScreenshotsFolderItem = NSMenuItem(
-            title: "",
-            action: #selector(openScreenshotsFolder),
-            keyEquivalent: ""
-        )
+        let openScreenshotsFolderItem = NSMenuItem(title: "", action: #selector(openScreenshotsFolder), keyEquivalent: "")
         openScreenshotsFolderItem.target = self
         menu.addItem(openScreenshotsFolderItem)
 
-        let openVideosFolderItem = NSMenuItem(
-            title: "",
-            action: #selector(openVideosFolder),
-            keyEquivalent: ""
-        )
+        let openVideosFolderItem = NSMenuItem(title: "", action: #selector(openVideosFolder), keyEquivalent: "")
         openVideosFolderItem.target = self
         menu.addItem(openVideosFolderItem)
 
-        let compressVideoItem = NSMenuItem(
-            title: "",
-            action: #selector(openVideoCompressor),
-            keyEquivalent: ""
-        )
+        let compressVideoItem = NSMenuItem(title: "", action: #selector(openVideoCompressor), keyEquivalent: "")
         compressVideoItem.target = self
         menu.addItem(compressVideoItem)
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(
-            title: "",
-            action: #selector(quitApp),
-            keyEquivalent: "q"
-        )
+        let quitItem = NSMenuItem(title: "", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -113,30 +90,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
 
         controller.onAreaHotkeyChanged = { [weak self] hotkey in
             guard let self else { return false }
-            var config = self.settings.hotkeys
+            var config = settings.hotkeys
             config.areaCapture = hotkey
-            return self.tryApplyHotkeys(config)
+            return tryApplyHotkeys(config)
         }
 
         controller.onFullHotkeyChanged = { [weak self] hotkey in
             guard let self else { return false }
-            var config = self.settings.hotkeys
+            var config = settings.hotkeys
             config.fullCapture = hotkey
-            return self.tryApplyHotkeys(config)
+            return tryApplyHotkeys(config)
         }
 
         controller.onVideoHotkeyChanged = { [weak self] hotkey in
             guard let self else { return false }
-            var config = self.settings.hotkeys
+            var config = settings.hotkeys
             config.videoToggle = hotkey
-            return self.tryApplyHotkeys(config)
+            return tryApplyHotkeys(config)
+        }
+
+        controller.onVideoPauseResumeHotkeyChanged = { [weak self] hotkey in
+            guard let self else { return false }
+            var config = settings.hotkeys
+            config.videoPauseResume = hotkey
+            return tryApplyHotkeys(config)
         }
 
         controller.onLanguageChanged = { [weak self] language in
             guard let self else { return }
-            self.settings.setLanguage(language)
-            self.refreshMenuLocalization()
-            self.settingsWindowController?.refreshLocalization()
+            settings.setLanguage(language)
+            refreshMenuLocalization()
+            settingsWindowController?.refreshLocalization()
         }
 
         controller.onScreenshotActionChanged = { [weak self] action in
@@ -155,13 +139,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
             self?.setLaunchAtLogin(enabled)
         }
 
-        controller.onVideoBitrateChanged = { [weak self] bitrateKbps in
-            self?.settings.setVideoTargetBitrateKbps(bitrateKbps)
+        controller.onVideoFileFormatChanged = { [weak self] format in
+            self?.settings.setVideoFileFormat(format)
+        }
+
+        controller.onVideoCodecChanged = { [weak self] codec in
+            self?.settings.setVideoCodec(codec)
+        }
+
+        controller.onVideoFrameRateChanged = { [weak self] frameRate in
+            self?.settings.setVideoFrameRate(frameRate)
+        }
+
+        controller.onVideoQualityPresetChanged = { [weak self] preset in
+            self?.settings.setVideoQualityPreset(preset)
             self?.settingsWindowController?.reloadFromSettings()
+        }
+
+        controller.onVideoStartDelayChanged = { [weak self] delay in
+            self?.settings.setVideoStartDelaySeconds(delay.rawValue)
         }
 
         controller.onVideoAudioModeChanged = { [weak self] mode in
             self?.settings.setVideoAudioMode(mode)
+        }
+
+        controller.onVideoShowCursorChanged = { [weak self] value in
+            self?.settings.setVideoShowCursor(value)
+        }
+
+        controller.onAutoOpenRecordedVideoChanged = { [weak self] value in
+            self?.settings.setAutoOpenRecordedVideo(value)
         }
 
         controller.onChooseScreenshotsDirectory = { [weak self] in
@@ -196,6 +204,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         hotkeyManager.onVideoToggle = { [weak self] in
             Task { @MainActor in
                 await self?.handleVideoToggleHotkey()
+            }
+        }
+
+        hotkeyManager.onVideoPauseResume = { [weak self] in
+            Task { @MainActor in
+                await self?.handleVideoPauseResumeHotkey()
             }
         }
 
@@ -235,6 +249,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
             return Localizer.text(
                 "Горячая клавиша полного экрана конфликтует с горячей клавишей видео.",
                 "Full-screen hotkey conflicts with video hotkey."
+            )
+        }
+
+        if configuration.videoPauseResume.matches(configuration.areaCapture) {
+            return Localizer.text(
+                "Горячая клавиша паузы видео конфликтует с горячей клавишей области.",
+                "Video pause hotkey conflicts with area hotkey."
+            )
+        }
+
+        if configuration.videoPauseResume.matches(configuration.fullCapture) {
+            return Localizer.text(
+                "Горячая клавиша паузы видео конфликтует с горячей клавишей полного экрана.",
+                "Video pause hotkey conflicts with full-screen hotkey."
+            )
+        }
+
+        if configuration.videoPauseResume.matches(configuration.videoToggle) {
+            return Localizer.text(
+                "Горячие клавиши старт/стоп и пауза/продолжить не должны совпадать.",
+                "Start/stop and pause/resume hotkeys must be different."
             )
         }
 
@@ -284,7 +319,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
 
         if screenRecorder.isRecording {
             do {
-                _ = try await screenRecorder.stopRecording()
+                let outputURL = try await screenRecorder.stopRecording()
+                if settings.autoOpenRecordedVideo {
+                    NSWorkspace.shared.open(outputURL)
+                }
             } catch {
                 if let recorderError = error as? ScreenRecorderError, recorderError == .stopInProgress {
                     return
@@ -298,10 +336,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         }
 
         do {
+            let countdown = settings.videoStartDelaySeconds
+            if countdown > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(countdown) * 1_000_000_000)
+            }
+
             _ = try await screenRecorder.startRecording(
                 audioMode: settings.videoAudioMode,
-                targetBitrateKbps: settings.videoTargetBitrateKbps,
-                outputDirectory: settings.videosDirectory
+                targetBitrateKbps: settings.videoQualityPreset.targetBitrateKbps,
+                outputDirectory: settings.videosDirectory,
+                fileFormat: settings.videoFileFormat,
+                codec: settings.videoCodec,
+                frameRate: settings.videoFrameRate,
+                showCursor: settings.videoShowCursor
             )
         } catch {
             showErrorAlert(
@@ -311,16 +358,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         }
     }
 
-    private func setStatusItemRecordingState(isRecording: Bool) {
+    private func handleVideoPauseResumeHotkey() async {
+        if screenRecorder.isStopInProgress || !screenRecorder.isRecording {
+            return
+        }
+
+        do {
+            if screenRecorder.isPaused {
+                try await screenRecorder.resumeRecording()
+            } else {
+                try await screenRecorder.pauseRecording()
+            }
+        } catch {
+            if let recorderError = error as? ScreenRecorderError, recorderError == .stopInProgress {
+                return
+            }
+            showErrorAlert(
+                title: Localizer.text("Ошибка записи видео", "Video Recording Error"),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func setStatusItemRecordingState(state: ScreenRecordingState) {
         guard let button = statusItem?.button else {
             return
         }
 
-        let symbolName = isRecording ? "record.circle.fill" : "camera.viewfinder"
+        let symbolName: String
+        let tintColor: NSColor?
+        switch state {
+        case .idle:
+            symbolName = "camera.viewfinder"
+            tintColor = nil
+        case .recording:
+            symbolName = "record.circle.fill"
+            tintColor = .systemRed
+        case .paused:
+            symbolName = "pause.circle.fill"
+            tintColor = .systemOrange
+        }
+
         if let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
-            symbol.isTemplate = !isRecording
+            symbol.isTemplate = (state == .idle)
             button.image = symbol
-            button.contentTintColor = isRecording ? .systemRed : nil
+            button.contentTintColor = tintColor
             button.title = ""
         } else {
             button.contentTintColor = nil
@@ -339,8 +421,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
 
         if let button = statusItem?.button {
             button.toolTip = Localizer.text(
-                "Cliptara: Ctrl+` область, Ctrl+1 весь экран, Ctrl+2 старт/стоп видео",
-                "Cliptara: Ctrl+` area, Ctrl+1 full screen, Ctrl+2 start/stop video"
+                "Cliptara: Ctrl+` область, Ctrl+1 экран, Ctrl+2 старт/стоп, Ctrl+3 пауза/продолжить",
+                "Cliptara: Ctrl+` area, Ctrl+1 screen, Ctrl+2 start/stop, Ctrl+3 pause/resume"
             )
         }
     }

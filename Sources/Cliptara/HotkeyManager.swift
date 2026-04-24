@@ -7,11 +7,13 @@ final class HotkeyManager {
         static let area: UInt32 = 1
         static let full: UInt32 = 2
         static let videoToggle: UInt32 = 3
+        static let videoPauseResume: UInt32 = 4
     }
 
     var onAreaCapture: (() -> Void)?
     var onFullCapture: (() -> Void)?
     var onVideoToggle: (() -> Void)?
+    var onVideoPauseResume: (() -> Void)?
 
     private var eventHandlerRef: EventHandlerRef?
     private var hotkeyRefs: [EventHotKeyRef] = []
@@ -92,6 +94,8 @@ final class HotkeyManager {
             onFullCapture?()
         case HotkeyID.videoToggle:
             onVideoToggle?()
+        case HotkeyID.videoPauseResume:
+            onVideoPauseResume?()
         default:
             break
         }
@@ -131,5 +135,6 @@ final class HotkeyManager {
         register(hotkey: configuration.areaCapture, id: HotkeyID.area)
         register(hotkey: configuration.fullCapture, id: HotkeyID.full)
         register(hotkey: configuration.videoToggle, id: HotkeyID.videoToggle)
+        register(hotkey: configuration.videoPauseResume, id: HotkeyID.videoPauseResume)
     }
 }

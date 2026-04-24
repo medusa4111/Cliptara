@@ -3,10 +3,17 @@ import CoreGraphics
 import Foundation
 @preconcurrency import ScreenCaptureKit
 
+enum ScreenRecordingState: Equatable {
+    case idle
+    case recording
+    case paused
+}
+
 enum ScreenRecorderError: LocalizedError, Equatable {
     case alreadyRecording
     case stopInProgress
     case notRecording
+    case notPaused
     case permissionDenied
     case displayNotFound
     case streamSetupFailed
@@ -20,6 +27,8 @@ enum ScreenRecorderError: LocalizedError, Equatable {
             return Localizer.text("Остановка записи уже выполняется.", "Recording stop is already in progress.")
         case .notRecording:
             return Localizer.text("Запись сейчас не идет.", "Recording is not running.")
+        case .notPaused:
+            return Localizer.text("Запись сейчас не на паузе.", "Recording is not paused.")
         case .permissionDenied:
             return Localizer.text(
                 "Нет доступа к записи экрана. Разрешите доступ в Системных настройках.",
@@ -40,17 +49,39 @@ enum ScreenRecorderError: LocalizedError, Equatable {
 
 @MainActor
 final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCRecordingOutputDelegate {
+    private struct SessionParameters {
+        let audioMode: AudioCaptureMode
+        let targetBitrateKbps: Int
+        let fileFormat: VideoFileFormat
+        let codec: VideoCodecOption
+        let frameRate: VideoFrameRateOption
+        let showCursor: Bool
+    }
+
     private var stream: SCStream?
     private var recordingOutput: SCRecordingOutput?
-    private var activeOutputURL: URL?
+    private var activeSegmentURL: URL?
+    private var finalOutputURL: URL?
+    private var sessionParameters: SessionParameters?
+    private var segmentURLs: [URL] = []
+    private var state: ScreenRecordingState = .idle
     private var isStopping = false
+    private var ignoreStreamStopCallback = false
 
-    var onRecordingStateChanged: ((Bool) -> Void)?
+    var onRecordingStateChanged: ((ScreenRecordingState) -> Void)?
 
     override init() {}
 
+    var recordingState: ScreenRecordingState {
+        state
+    }
+
     var isRecording: Bool {
-        stream != nil && activeOutputURL != nil
+        state != .idle
+    }
+
+    var isPaused: Bool {
+        state == .paused
     }
 
     var isStopInProgress: Bool {
@@ -60,9 +91,13 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
     func startRecording(
         audioMode: AudioCaptureMode,
         targetBitrateKbps: Int,
-        outputDirectory: URL
+        outputDirectory: URL,
+        fileFormat: VideoFileFormat,
+        codec: VideoCodecOption,
+        frameRate: VideoFrameRateOption,
+        showCursor: Bool
     ) async throws -> URL {
-        if stream != nil || isStopping {
+        if state != .idle || isStopping {
             throw ScreenRecorderError.alreadyRecording
         }
 
@@ -72,21 +107,156 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             throw ScreenRecorderError.permissionDenied
         }
 
-        let (filter, configuration, preferredCodec) = try await makeStreamSetup(
-            audioMode: audioMode,
-            targetBitrateKbps: targetBitrateKbps
-        )
-        let outputURL = makeOutputURL(directory: outputDirectory)
+        let finalURL = makeFinalOutputURL(directory: outputDirectory, format: fileFormat)
+        if FileManager.default.fileExists(atPath: finalURL.path) {
+            try? FileManager.default.removeItem(at: finalURL)
+        }
 
-        if FileManager.default.fileExists(atPath: outputURL.path) {
-            try? FileManager.default.removeItem(at: outputURL)
+        finalOutputURL = finalURL
+        sessionParameters = SessionParameters(
+            audioMode: audioMode,
+            targetBitrateKbps: clampBitrate(targetBitrateKbps),
+            fileFormat: fileFormat,
+            codec: codec,
+            frameRate: frameRate,
+            showCursor: showCursor
+        )
+        segmentURLs.removeAll()
+
+        guard let parameters = sessionParameters else {
+            throw ScreenRecorderError.streamSetupFailed
+        }
+
+        _ = try await beginSegmentCapture(parameters: parameters)
+        state = .recording
+        notifyRecordingStateChange(.recording)
+
+        return finalURL
+    }
+
+    func pauseRecording() async throws {
+        guard state == .recording else {
+            throw ScreenRecorderError.notRecording
+        }
+
+        if isStopping {
+            throw ScreenRecorderError.stopInProgress
+        }
+
+        try await finalizeCurrentSegmentAndStopCapture()
+        state = .paused
+        notifyRecordingStateChange(.paused)
+    }
+
+    func resumeRecording() async throws {
+        guard state == .paused else {
+            throw ScreenRecorderError.notPaused
+        }
+
+        if isStopping {
+            throw ScreenRecorderError.stopInProgress
+        }
+
+        guard let parameters = sessionParameters else {
+            throw ScreenRecorderError.streamSetupFailed
+        }
+
+        _ = try await beginSegmentCapture(parameters: parameters)
+        state = .recording
+        notifyRecordingStateChange(.recording)
+    }
+
+    func stopRecording() async throws -> URL {
+        guard state != .idle else {
+            throw ScreenRecorderError.notRecording
+        }
+        if isStopping {
+            throw ScreenRecorderError.stopInProgress
+        }
+
+        isStopping = true
+        defer {
+            isStopping = false
+        }
+
+        let wasRecording = state == .recording
+        if wasRecording {
+            try await finalizeCurrentSegmentAndStopCapture()
+        }
+
+        guard let finalOutputURL,
+              let parameters = sessionParameters else {
+            clearSession(removeTemporaryFiles: true)
+            notifyRecordingStateChange(.idle)
+            throw ScreenRecorderError.invalidOutputFile
+        }
+
+        guard !segmentURLs.isEmpty else {
+            clearSession(removeTemporaryFiles: true)
+            notifyRecordingStateChange(.idle)
+            throw ScreenRecorderError.invalidOutputFile
+        }
+
+        do {
+            try await produceFinalOutput(
+                from: segmentURLs,
+                to: finalOutputURL,
+                format: parameters.fileFormat
+            )
+            cleanupTemporarySegments()
+            clearSession(removeTemporaryFiles: false)
+            notifyRecordingStateChange(.idle)
+            return finalOutputURL
+        } catch {
+            clearSession(removeTemporaryFiles: true)
+            notifyRecordingStateChange(.idle)
+            throw error
+        }
+    }
+
+    nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {}
+
+    nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {}
+
+    nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: Error) {
+        Task { @MainActor in
+            self.clearSession(removeTemporaryFiles: true)
+            self.notifyRecordingStateChange(.idle)
+        }
+    }
+
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        let stoppedID = ObjectIdentifier(stream)
+        Task { @MainActor in
+            guard !self.ignoreStreamStopCallback else {
+                return
+            }
+            if let current = self.stream, ObjectIdentifier(current) == stoppedID {
+                self.clearSession(removeTemporaryFiles: true)
+                self.notifyRecordingStateChange(.idle)
+            }
+        }
+    }
+
+    private func beginSegmentCapture(parameters: SessionParameters) async throws -> URL {
+        let (filter, configuration, preferredCodec) = try await makeStreamSetup(parameters: parameters)
+        let segmentURL = makeSegmentOutputURL(format: parameters.fileFormat)
+
+        if FileManager.default.fileExists(atPath: segmentURL.path) {
+            try? FileManager.default.removeItem(at: segmentURL)
         }
 
         let recordingConfiguration = SCRecordingOutputConfiguration()
-        recordingConfiguration.outputURL = outputURL
-        if recordingConfiguration.availableOutputFileTypes.contains(.mov) {
+        recordingConfiguration.outputURL = segmentURL
+
+        if recordingConfiguration.availableOutputFileTypes.contains(parameters.fileFormat.fileType) {
+            recordingConfiguration.outputFileType = parameters.fileFormat.fileType
+        } else if recordingConfiguration.availableOutputFileTypes.contains(.mov) {
             recordingConfiguration.outputFileType = .mov
+        } else if let fallbackType = recordingConfiguration.availableOutputFileTypes.first {
+            recordingConfiguration.outputFileType = fallbackType
         }
+
         if recordingConfiguration.availableVideoCodecTypes.contains(preferredCodec) {
             recordingConfiguration.videoCodecType = preferredCodec
         } else if recordingConfiguration.availableVideoCodecTypes.contains(.h264) {
@@ -108,76 +278,179 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
 
         self.stream = stream
         self.recordingOutput = recordingOutput
-        self.activeOutputURL = outputURL
-        self.isStopping = false
-        notifyRecordingStateChange(isRecording: true)
+        self.activeSegmentURL = segmentURL
 
-        return outputURL
+        return segmentURL
     }
 
-    func stopRecording() async throws -> URL {
+    private func finalizeCurrentSegmentAndStopCapture() async throws {
         guard let activeStream = stream,
-              let outputURL = activeOutputURL else {
-            throw ScreenRecorderError.notRecording
-        }
-        if isStopping {
-            throw ScreenRecorderError.stopInProgress
+              let segmentURL = activeSegmentURL else {
+            throw ScreenRecorderError.streamSetupFailed
         }
 
-        isStopping = true
+        ignoreStreamStopCallback = true
         defer {
-            isStopping = false
+            ignoreStreamStopCallback = false
         }
 
         do {
             try await activeStream.stopCapture()
         } catch {
-            // Если stop неуспешен, принудительно выходим из режима записи в UI.
-            clearState()
-            notifyRecordingStateChange(isRecording: false)
-            throw error
+            clearStreamOnly()
+            throw ScreenRecorderError.streamSetupFailed
         }
 
         if let output = recordingOutput {
             try? activeStream.removeRecordingOutput(output)
         }
 
-        let ready = await waitForFinalizedVideo(at: outputURL, timeout: 6.0)
+        let ready = await waitForFinalizedVideo(at: segmentURL, timeout: 6.0)
+        clearStreamOnly()
 
-        clearState()
-        notifyRecordingStateChange(isRecording: false)
-
-        if ready || FileManager.default.fileExists(atPath: outputURL.path) {
-            return outputURL
+        if ready || FileManager.default.fileExists(atPath: segmentURL.path) {
+            segmentURLs.append(segmentURL)
+            activeSegmentURL = nil
+            return
         }
         throw ScreenRecorderError.invalidOutputFile
     }
 
-    nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {}
+    private func produceFinalOutput(from segments: [URL], to outputURL: URL, format: VideoFileFormat) async throws {
+        try? FileManager.default.removeItem(at: outputURL)
 
-    nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {}
-
-    nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: Error) {
-        Task { @MainActor in
-            self.clearState()
-            self.notifyRecordingStateChange(isRecording: false)
+        if segments.count == 1, let segment = segments.first, format == .mov {
+            do {
+                try FileManager.default.moveItem(at: segment, to: outputURL)
+            } catch {
+                try FileManager.default.copyItem(at: segment, to: outputURL)
+            }
+            let ready = await isVideoFileReady(at: outputURL)
+            if ready {
+                return
+            }
+            throw ScreenRecorderError.invalidOutputFile
         }
+
+        try await mergeSegments(segments, outputURL: outputURL, fileType: format.fileType)
     }
 
-    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
-        let stoppedID = ObjectIdentifier(stream)
-        Task { @MainActor in
-            if let current = self.stream, ObjectIdentifier(current) == stoppedID {
-                self.clearState()
-                self.notifyRecordingStateChange(isRecording: false)
+    private func mergeSegments(_ segments: [URL], outputURL: URL, fileType: AVFileType) async throws {
+        let composition = AVMutableComposition()
+        guard let compositionVideoTrack = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw ScreenRecorderError.invalidOutputFile
+        }
+
+        let compositionAudioTrack = composition.addMutableTrack(
+            withMediaType: .audio,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        )
+
+        var insertTime = CMTime.zero
+        var didInsertVideo = false
+
+        for segmentURL in segments {
+            let asset = AVURLAsset(url: segmentURL)
+
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            guard let videoTrack = videoTracks.first else {
+                continue
+            }
+
+            let duration = try await asset.load(.duration)
+            if duration <= .zero {
+                continue
+            }
+
+            let timeRange = CMTimeRange(start: .zero, duration: duration)
+            try compositionVideoTrack.insertTimeRange(timeRange, of: videoTrack, at: insertTime)
+
+            if !didInsertVideo {
+                let transform = try await videoTrack.load(.preferredTransform)
+                compositionVideoTrack.preferredTransform = transform
+                didInsertVideo = true
+            }
+
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            if let audioTrack = audioTracks.first, let compositionAudioTrack {
+                try? compositionAudioTrack.insertTimeRange(timeRange, of: audioTrack, at: insertTime)
+            }
+
+            insertTime = CMTimeAdd(insertTime, duration)
+        }
+
+        guard didInsertVideo else {
+            throw ScreenRecorderError.invalidOutputFile
+        }
+
+        try await exportComposition(composition, outputURL: outputURL, fileType: fileType)
+    }
+
+    private func exportComposition(_ composition: AVMutableComposition, outputURL: URL, fileType: AVFileType) async throws {
+        try? FileManager.default.removeItem(at: outputURL)
+
+        let presetCandidates = [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality]
+        var lastError: Error?
+
+        for preset in presetCandidates {
+            guard let exportSession = AVAssetExportSession(asset: composition, presetName: preset) else {
+                continue
+            }
+
+            try? FileManager.default.removeItem(at: outputURL)
+            exportSession.outputURL = outputURL
+            exportSession.shouldOptimizeForNetworkUse = false
+            exportSession.outputFileType = exportSession.supportedFileTypes.contains(fileType) ? fileType : .mov
+
+            do {
+                try await runExport(exportSession: exportSession, outputURL: outputURL, outputFileType: exportSession.outputFileType ?? .mov)
+                let ready = await isVideoFileReady(at: outputURL)
+                if ready {
+                    return
+                }
+                throw ScreenRecorderError.invalidOutputFile
+            } catch {
+                lastError = error
             }
         }
+
+        throw lastError ?? ScreenRecorderError.invalidOutputFile
     }
 
-    private func clearState() {
+    private func runExport(exportSession: AVAssetExportSession, outputURL: URL, outputFileType: AVFileType) async throws {
+        try await exportSession.export(to: outputURL, as: outputFileType)
+    }
+
+    private func cleanupTemporarySegments() {
+        for url in segmentURLs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        segmentURLs.removeAll()
+    }
+
+    private func clearSession(removeTemporaryFiles: Bool) {
+        clearStreamOnly()
+        if removeTemporaryFiles {
+            cleanupTemporarySegments()
+            if let finalOutputURL {
+                try? FileManager.default.removeItem(at: finalOutputURL)
+            }
+        } else {
+            segmentURLs.removeAll()
+        }
+        activeSegmentURL = nil
+        finalOutputURL = nil
+        sessionParameters = nil
+        state = .idle
+    }
+
+    private func clearStreamOnly() {
         stream = nil
         recordingOutput = nil
-        activeOutputURL = nil
+        activeSegmentURL = nil
     }
 
     private func waitForFinalizedVideo(at url: URL, timeout: TimeInterval) async -> Bool {
@@ -191,13 +464,12 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         return await isVideoFileReady(at: url)
     }
 
-    private func notifyRecordingStateChange(isRecording: Bool) {
-        onRecordingStateChanged?(isRecording)
+    private func notifyRecordingStateChange(_ state: ScreenRecordingState) {
+        onRecordingStateChanged?(state)
     }
 
     private func makeStreamSetup(
-        audioMode: AudioCaptureMode,
-        targetBitrateKbps: Int
+        parameters: SessionParameters
     ) async throws -> (SCContentFilter, SCStreamConfiguration, AVVideoCodecType) {
         let shareableContent = try await SCShareableContent.current
 
@@ -209,15 +481,15 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         let captureProfile = makeCaptureProfile(
             nativeWidth: Int(CGDisplayPixelsWide(display.displayID)),
             nativeHeight: Int(CGDisplayPixelsHigh(display.displayID)),
-            targetBitrateKbps: targetBitrateKbps
+            targetBitrateKbps: parameters.targetBitrateKbps
         )
 
         let streamConfig = SCStreamConfiguration()
         streamConfig.width = captureProfile.width
         streamConfig.height = captureProfile.height
-        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(captureProfile.frameRate))
-        streamConfig.showsCursor = true
-        streamConfig.capturesAudio = audioMode.capturesSystemAudio
+        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(parameters.frameRate.fps))
+        streamConfig.showsCursor = parameters.showCursor
+        streamConfig.capturesAudio = parameters.audioMode.capturesSystemAudio
         streamConfig.excludesCurrentProcessAudio = false
         streamConfig.sampleRate = 48_000
         streamConfig.channelCount = 2
@@ -226,8 +498,7 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             streamConfig.captureMicrophone = false
         }
 
-        let preferredCodec: AVVideoCodecType = captureProfile.useHEVC ? .hevc : .h264
-        return (contentFilter, streamConfig, preferredCodec)
+        return (contentFilter, streamConfig, parameters.codec.codecType)
     }
 
     private func chooseDisplay(from displays: [SCDisplay]) -> SCDisplay? {
@@ -242,11 +513,17 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         return CGRequestScreenCaptureAccess()
     }
 
-    private func makeOutputURL(directory: URL) -> URL {
+    private func makeFinalOutputURL(directory: URL, format: VideoFileFormat) -> URL {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let name = "CliptaraVid_\(formatter.string(from: Date())).mov"
-        return directory.appendingPathComponent(name)
+        let fileName = "CliptaraVid_\(formatter.string(from: Date())).\(format.fileExtension)"
+        return directory.appendingPathComponent(fileName)
+    }
+
+    private func makeSegmentOutputURL(format: VideoFileFormat) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("cliptara-segment-\(UUID().uuidString)")
+            .appendingPathExtension(format.fileExtension)
     }
 
     private func isVideoFileReady(at url: URL) async -> Bool {
@@ -281,7 +558,7 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         nativeHeight: Int,
         targetBitrateKbps: Int
     ) -> CaptureProfile {
-        let bitrate = min(max(targetBitrateKbps, 800), 50_000)
+        let bitrate = clampBitrate(targetBitrateKbps)
 
         let baselineBitrateKbps = 12_000.0
         let ratio = min(max(Double(bitrate) / baselineBitrateKbps, 0.14), 1.0)
@@ -296,10 +573,11 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         width = makeEven(max(minWidth, min(nativeWidth, width)))
         height = makeEven(max(minHeight, min(nativeHeight, height)))
 
-        let frameRate = max(12, min(30, Int((Double(bitrate) / 220.0).rounded())))
-        let useHEVC = bitrate <= 12_000
+        return CaptureProfile(width: width, height: height)
+    }
 
-        return CaptureProfile(width: width, height: height, frameRate: frameRate, useHEVC: useHEVC)
+    private func clampBitrate(_ value: Int) -> Int {
+        min(max(value, 800), 50_000)
     }
 
     private func makeEven(_ value: Int) -> Int {
@@ -313,6 +591,4 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
 private struct CaptureProfile {
     let width: Int
     let height: Int
-    let frameRate: Int
-    let useHEVC: Bool
 }
