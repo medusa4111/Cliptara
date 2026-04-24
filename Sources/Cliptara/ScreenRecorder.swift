@@ -181,7 +181,13 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
 
         let wasRecording = state == .recording
         if wasRecording {
-            try await finalizeCurrentSegmentAndStopCapture()
+            do {
+                try await finalizeCurrentSegmentAndStopCapture()
+            } catch {
+                clearSession(removeTemporaryFiles: true)
+                notifyRecordingStateChange(.idle)
+                throw error
+            }
         }
 
         guard let finalOutputURL,

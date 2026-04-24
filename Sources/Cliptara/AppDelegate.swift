@@ -314,6 +314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
 
     private func handleVideoToggleHotkey() async {
         if screenRecorder.isStopInProgress {
+            refreshStatusItemFromRecorderState()
             return
         }
 
@@ -323,14 +324,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
                 if settings.autoOpenRecordedVideo {
                     NSWorkspace.shared.open(outputURL)
                 }
+                refreshStatusItemFromRecorderState()
             } catch {
                 if let recorderError = error as? ScreenRecorderError, recorderError == .stopInProgress {
+                    refreshStatusItemFromRecorderState()
                     return
                 }
                 showErrorAlert(
                     title: Localizer.text("Ошибка записи видео", "Video Recording Error"),
                     message: error.localizedDescription
                 )
+                refreshStatusItemFromRecorderState()
             }
             return
         }
@@ -350,11 +354,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
                 frameRate: settings.videoFrameRate,
                 showCursor: settings.videoShowCursor
             )
+            refreshStatusItemFromRecorderState()
         } catch {
             showErrorAlert(
                 title: Localizer.text("Ошибка записи видео", "Video Recording Error"),
                 message: error.localizedDescription
             )
+            refreshStatusItemFromRecorderState()
         }
     }
 
@@ -369,15 +375,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
             } else {
                 try await screenRecorder.pauseRecording()
             }
+            refreshStatusItemFromRecorderState()
         } catch {
             if let recorderError = error as? ScreenRecorderError, recorderError == .stopInProgress {
+                refreshStatusItemFromRecorderState()
                 return
             }
             showErrorAlert(
                 title: Localizer.text("Ошибка записи видео", "Video Recording Error"),
                 message: error.localizedDescription
             )
+            refreshStatusItemFromRecorderState()
         }
+    }
+
+    private func refreshStatusItemFromRecorderState() {
+        setStatusItemRecordingState(state: screenRecorder.recordingState)
     }
 
     private func setStatusItemRecordingState(state: ScreenRecordingState) {
