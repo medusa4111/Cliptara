@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
-  "build": "10",
+  "version": "1.4.1",
+  "build": "11",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "New Video settings tab: MP4/MOV format, H.264/HEVC codec, 24/30/60 FPS, quality presets, start countdown, cursor toggle, auto-open after recording, and separate pause/resume hotkey."
+  "release_notes": "Fixed stuck recording icon state in menu bar after stopping recording."
 }
