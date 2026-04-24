@@ -10,6 +10,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     var onScreenshotActionChanged: ((ScreenshotAction) -> Void)?
     var onScreenshotFormatChanged: ((ScreenshotFileFormat) -> Void)?
     var onMuteScreenshotSoundChanged: ((Bool) -> Void)?
+    var onLaunchAtLoginChanged: ((Bool) -> Void)?
     var onVideoBitrateChanged: ((Int) -> Void)?
     var onVideoAudioModeChanged: ((AudioCaptureMode) -> Void)?
     var onChooseScreenshotsDirectory: (() -> Void)?
@@ -24,6 +25,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let screenshotActionLabel = NSTextField(labelWithString: "")
     private let screenshotFormatLabel = NSTextField(labelWithString: "")
     private let muteSoundLabel = NSTextField(labelWithString: "")
+    private let launchAtLoginLabel = NSTextField(labelWithString: "")
     private let videoBitrateLabel = NSTextField(labelWithString: "")
     private let videoAudioLabel = NSTextField(labelWithString: "")
     private let screenshotsFolderLabel = NSTextField(labelWithString: "")
@@ -40,6 +42,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let screenshotActionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let screenshotFormatPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let muteSoundSwitch = NSSwitch(frame: .zero)
+    private let launchAtLoginSwitch = NSSwitch(frame: .zero)
     private let videoBitrateField = NSTextField(string: "")
     private let videoAudioPopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
@@ -87,6 +90,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         videoField.hotkey = settings.hotkeys.videoToggle
 
         muteSoundSwitch.state = settings.muteScreenshotSound ? .on : .off
+        launchAtLoginSwitch.state = settings.launchAtLogin ? .on : .off
 
         if let languageIndex = languageOptions.firstIndex(of: settings.language) {
             languagePopup.selectItem(at: languageIndex)
@@ -118,6 +122,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         screenshotActionLabel.stringValue = Localizer.text("Действия со скриншотами:", "Screenshot action:")
         screenshotFormatLabel.stringValue = Localizer.text("Формат скриншота:", "Screenshot format:")
         muteSoundLabel.stringValue = Localizer.text("Выключить звук скриншота:", "Mute screenshot sound:")
+        launchAtLoginLabel.stringValue = Localizer.text("Автозапуск при входе:", "Launch at login:")
         videoBitrateLabel.stringValue = Localizer.text("Битрейт видео (кбит/с):", "Video bitrate (kbps):")
         videoAudioLabel.stringValue = Localizer.text("Звук видео:", "Video audio:")
         screenshotsFolderLabel.stringValue = Localizer.text("Папка скриншотов:", "Screenshots folder:")
@@ -139,7 +144,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     private func buildWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 590),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -222,6 +227,18 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             muteSoundSwitch.centerYAnchor.constraint(equalTo: muteContainer.centerYAnchor)
         ])
 
+        let launchAtLoginContainer = NSView(frame: .zero)
+        launchAtLoginContainer.translatesAutoresizingMaskIntoConstraints = false
+        launchAtLoginContainer.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
+        launchAtLoginContainer.heightAnchor.constraint(equalToConstant: 26).isActive = true
+
+        launchAtLoginSwitch.translatesAutoresizingMaskIntoConstraints = false
+        launchAtLoginContainer.addSubview(launchAtLoginSwitch)
+        NSLayoutConstraint.activate([
+            launchAtLoginSwitch.leadingAnchor.constraint(equalTo: launchAtLoginContainer.leadingAnchor),
+            launchAtLoginSwitch.centerYAnchor.constraint(equalTo: launchAtLoginContainer.centerYAnchor)
+        ])
+
         let screenshotsFolderControl = makeFolderControl(pathField: screenshotsPathField, button: chooseScreenshotsButton, width: controlsWidth)
         let videosFolderControl = makeFolderControl(pathField: videosPathField, button: chooseVideosButton, width: controlsWidth)
         let bitrateControl = makeBitrateControl(width: controlsWidth)
@@ -231,6 +248,7 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
             [screenshotActionLabel, screenshotActionPopup],
             [screenshotFormatLabel, screenshotFormatPopup],
             [muteSoundLabel, muteContainer],
+            [launchAtLoginLabel, launchAtLoginContainer],
             [videoBitrateLabel, bitrateControl],
             [videoAudioLabel, videoAudioPopup],
             [screenshotsFolderLabel, screenshotsFolderControl],
@@ -375,6 +393,9 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         muteSoundSwitch.target = self
         muteSoundSwitch.action = #selector(muteSoundSwitchChanged)
 
+        launchAtLoginSwitch.target = self
+        launchAtLoginSwitch.action = #selector(launchAtLoginSwitchChanged)
+
         videoBitrateField.target = self
         videoBitrateField.action = #selector(videoBitrateFieldChanged)
         videoBitrateField.delegate = self
@@ -466,6 +487,11 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     @objc
     private func muteSoundSwitchChanged() {
         onMuteScreenshotSoundChanged?(muteSoundSwitch.state == .on)
+    }
+
+    @objc
+    private func launchAtLoginSwitchChanged() {
+        onLaunchAtLoginChanged?(launchAtLoginSwitch.state == .on)
     }
 
     @objc

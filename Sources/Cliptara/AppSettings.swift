@@ -7,6 +7,7 @@ final class AppSettings: @unchecked Sendable {
         static let language = "appLanguage"
         static let muteScreenshotSound = "muteScreenshotSound"
         static let videoAudioMode = "videoAudioMode"
+        static let launchAtLogin = "launchAtLogin"
         static let hotkeys = "hotkeys"
         static let screenshotAction = "screenshotAction"
         static let screenshotFileFormat = "screenshotFileFormat"
@@ -20,6 +21,7 @@ final class AppSettings: @unchecked Sendable {
     private(set) var language: AppLanguage
     private(set) var muteScreenshotSound: Bool
     private(set) var videoAudioMode: AudioCaptureMode
+    private(set) var launchAtLogin: Bool
     private(set) var hotkeys: HotkeyConfiguration
     private(set) var screenshotAction: ScreenshotAction
     private(set) var screenshotFileFormat: ScreenshotFileFormat
@@ -53,6 +55,8 @@ final class AppSettings: @unchecked Sendable {
             videoAudioMode = .system
             defaults.set(videoAudioMode.rawValue, forKey: Keys.videoAudioMode)
         }
+
+        launchAtLogin = defaults.object(forKey: Keys.launchAtLogin) as? Bool ?? false
 
         if let data = defaults.data(forKey: Keys.hotkeys),
            let decoded = try? JSONDecoder().decode(HotkeyConfiguration.self, from: data) {
@@ -144,6 +148,11 @@ final class AppSettings: @unchecked Sendable {
     func setVideoAudioMode(_ mode: AudioCaptureMode) {
         videoAudioMode = mode
         defaults.set(mode.rawValue, forKey: Keys.videoAudioMode)
+    }
+
+    func setLaunchAtLogin(_ value: Bool) {
+        launchAtLogin = value
+        defaults.set(value, forKey: Keys.launchAtLogin)
     }
 
     func setHotkeys(_ hotkeys: HotkeyConfiguration) {

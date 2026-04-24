@@ -5,6 +5,7 @@ import Foundation
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unchecked Sendable {
     private let settings = AppSettings.shared
     private let hotkeyManager = HotkeyManager()
+    private let launchAtLoginManager = LaunchAtLoginManager()
     private let screenshotController = ScreenshotController()
     private let flashController = ScreenFlashController.shared
     private let screenRecorder = ScreenRecorder()
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         setupSettingsWindow()
         setupVideoCompressionWindow()
         configureHotkeys()
+        applyStoredLaunchAtLoginState()
         screenRecorder.onRecordingStateChanged = { [weak self] isRecording in
             Task { @MainActor in
                 self?.setStatusItemRecordingState(isRecording: isRecording)
@@ -147,6 +149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
 
         controller.onMuteScreenshotSoundChanged = { [weak self] value in
             self?.settings.setMuteScreenshotSound(value)
+        }
+
+        controller.onLaunchAtLoginChanged = { [weak self] enabled in
+            self?.setLaunchAtLogin(enabled)
         }
 
         controller.onVideoBitrateChanged = { [weak self] bitrateKbps in
@@ -508,6 +514,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         alert.informativeText = message
         alert.addButton(withTitle: Localizer.text("OK", "OK"))
         alert.runModal()
+    }
+
+    private func applyStoredLaunchAtLoginState() {
+        do {
+            try launchAtLoginManager.setEnabled(settings.launchAtLogin)
+        } catch {
+            settings.setLaunchAtLogin(false)
+        }
+        settings.setLaunchAtLogin(launchAtLoginManager.isEnabled())
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try launchAtLoginManager.setEnabled(enabled)
+            settings.setLaunchAtLogin(launchAtLoginManager.isEnabled())
+        } catch {
+            settings.setLaunchAtLogin(launchAtLoginManager.isEnabled())
+            settingsWindowController?.reloadFromSettings()
+            showErrorAlert(
+                title: Localizer.text("Автозапуск", "Launch at Login"),
+                message: error.localizedDescription
+            )
+        }
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
