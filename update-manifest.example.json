@@ -1,6 +1,6 @@
 {
-  "version": "1.4.1",
-  "build": "11",
+  "version": "1.4.2",
+  "build": "12",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "Fixed stuck recording icon state in menu bar after stopping recording."
+  "release_notes": "Added a new About tab in settings, introduced screenshot action \"Copy and save\", reduced settings window width, and improved localization coverage."
 }
