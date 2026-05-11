@@ -26,6 +26,7 @@ final class SettingsWindowController: NSWindowController {
     private let tabView = NSTabView(frame: .zero)
     private let mainTabItem = NSTabViewItem(identifier: "main")
     private let videoTabItem = NSTabViewItem(identifier: "video")
+    private let aboutTabItem = NSTabViewItem(identifier: "about")
 
     private let areaLabel = NSTextField(labelWithString: "")
     private let fullLabel = NSTextField(labelWithString: "")
@@ -47,6 +48,10 @@ final class SettingsWindowController: NSWindowController {
     private let videoShowCursorLabel = NSTextField(labelWithString: "")
     private let autoOpenVideoLabel = NSTextField(labelWithString: "")
     private let videosFolderLabel = NSTextField(labelWithString: "")
+    private let appVersionLabel = NSTextField(labelWithString: "")
+    private let appVersionValueLabel = NSTextField(labelWithString: "")
+    private let githubLinkButton = NSButton(title: "GitHub", target: nil, action: nil)
+    private let donatLinkButton = NSButton(title: "Donat", target: nil, action: nil)
 
     private let footerLabel = NSTextField(labelWithString: "")
     private let donateButton = NSButton(title: "", target: nil, action: nil)
@@ -85,7 +90,7 @@ final class SettingsWindowController: NSWindowController {
         .chineseTraditional,
         .arabic
     ]
-    private let screenshotActionOptions: [ScreenshotAction] = [.copyToClipboard, .saveToFiles]
+    private let screenshotActionOptions: [ScreenshotAction] = [.copyToClipboard, .saveToFiles, .copyAndSave]
     private let screenshotFormatOptions: [ScreenshotFileFormat] = [.png, .jpg, .webp]
     private let videoAudioOptions: [AudioCaptureMode] = [.system, .silent]
     private let videoFileFormatOptions = VideoFileFormat.allCases
@@ -93,6 +98,12 @@ final class SettingsWindowController: NSWindowController {
     private let videoFrameRateOptions = VideoFrameRateOption.allCases
     private let videoQualityOptions = VideoQualityPreset.allCases
     private let videoStartDelayOptions = VideoStartDelayOption.allCases
+
+    private let windowWidth: CGFloat = 700
+    private let tabContainerWidth: CGFloat = 640
+    private let tabContentWidth: CGFloat = 620
+    private let labelsWidth: CGFloat = 220
+    private let controlsWidth: CGFloat = 290
 
     init(settings: AppSettings) {
         areaField = HotkeyRecorderField(hotkey: settings.hotkeys.areaCapture)
@@ -162,6 +173,7 @@ final class SettingsWindowController: NSWindowController {
         window?.title = Localizer.text("Настройки Cliptara", "Cliptara Settings")
         mainTabItem.label = Localizer.text("Основное", "General")
         videoTabItem.label = Localizer.text("Видео", "Video")
+        aboutTabItem.label = Localizer.text("О программе", "About")
 
         areaLabel.stringValue = Localizer.text("Скриншот области:", "Area screenshot:")
         fullLabel.stringValue = Localizer.text("Скриншот экрана:", "Screen screenshot:")
@@ -183,10 +195,16 @@ final class SettingsWindowController: NSWindowController {
         videoShowCursorLabel.stringValue = Localizer.text("Показывать курсор:", "Show cursor:")
         autoOpenVideoLabel.stringValue = Localizer.text("Открывать видео после записи:", "Open video after recording:")
         videosFolderLabel.stringValue = Localizer.text("Папка видео:", "Videos folder:")
+        appVersionLabel.stringValue = Localizer.text("Версия программы:", "App version:")
+        appVersionValueLabel.stringValue = appVersionString()
 
         chooseScreenshotsButton.title = Localizer.text("Выбрать", "Choose")
         chooseVideosButton.title = Localizer.text("Выбрать", "Choose")
         donateButton.title = Localizer.text("Донат", "Donate")
+        githubLinkButton.title = "GitHub"
+        donatLinkButton.title = "Donat"
+        configureLinkButton(githubLinkButton)
+        configureLinkButton(donatLinkButton)
         footerLabel.stringValue = "Created by medusa411"
 
         rebuildLanguagePopupTitles()
@@ -204,7 +222,7 @@ final class SettingsWindowController: NSWindowController {
 
     private func buildWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: 640),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -233,19 +251,21 @@ final class SettingsWindowController: NSWindowController {
 
         tabView.translatesAutoresizingMaskIntoConstraints = false
         tabView.tabViewType = .topTabsBezelBorder
-        tabView.widthAnchor.constraint(equalToConstant: 700).isActive = true
+        tabView.widthAnchor.constraint(equalToConstant: tabContainerWidth).isActive = true
         tabView.heightAnchor.constraint(equalToConstant: 510).isActive = true
 
-        mainTabItem.view = makeMainTabView(width: 680)
-        videoTabItem.view = makeVideoTabView(width: 680)
+        mainTabItem.view = makeMainTabView(width: tabContentWidth)
+        videoTabItem.view = makeVideoTabView(width: tabContentWidth)
+        aboutTabItem.view = makeAboutTabView(width: tabContentWidth)
         tabView.addTabViewItem(mainTabItem)
         tabView.addTabViewItem(videoTabItem)
+        tabView.addTabViewItem(aboutTabItem)
         rootStack.addArrangedSubview(tabView)
 
         let separator = NSBox()
         separator.boxType = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
-        separator.widthAnchor.constraint(equalToConstant: 700).isActive = true
+        separator.widthAnchor.constraint(equalToConstant: tabContainerWidth).isActive = true
         rootStack.addArrangedSubview(separator)
 
         donateButton.bezelStyle = .rounded
@@ -255,7 +275,7 @@ final class SettingsWindowController: NSWindowController {
         let donateContainer = NSView(frame: .zero)
         donateContainer.translatesAutoresizingMaskIntoConstraints = false
         donateContainer.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        donateContainer.widthAnchor.constraint(equalToConstant: 700).isActive = true
+        donateContainer.widthAnchor.constraint(equalToConstant: tabContainerWidth).isActive = true
         donateContainer.addSubview(donateButton)
         NSLayoutConstraint.activate([
             donateButton.centerXAnchor.constraint(equalTo: donateContainer.centerXAnchor),
@@ -270,7 +290,7 @@ final class SettingsWindowController: NSWindowController {
         let footerContainer = NSView(frame: .zero)
         footerContainer.translatesAutoresizingMaskIntoConstraints = false
         footerContainer.heightAnchor.constraint(equalToConstant: 24).isActive = true
-        footerContainer.widthAnchor.constraint(equalToConstant: 700).isActive = true
+        footerContainer.widthAnchor.constraint(equalToConstant: tabContainerWidth).isActive = true
         footerContainer.addSubview(footerLabel)
         NSLayoutConstraint.activate([
             footerLabel.centerXAnchor.constraint(equalTo: footerContainer.centerXAnchor),
@@ -281,9 +301,6 @@ final class SettingsWindowController: NSWindowController {
 
     private func makeMainTabView(width: CGFloat) -> NSView {
         let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 500))
-
-        let controlsWidth: CGFloat = 300
-        let labelsWidth: CGFloat = 250
 
         areaField.translatesAutoresizingMaskIntoConstraints = false
         fullField.translatesAutoresizingMaskIntoConstraints = false
@@ -328,9 +345,6 @@ final class SettingsWindowController: NSWindowController {
 
     private func makeVideoTabView(width: CGFloat) -> NSView {
         let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 500))
-
-        let controlsWidth: CGFloat = 300
-        let labelsWidth: CGFloat = 250
 
         videoStartStopField.translatesAutoresizingMaskIntoConstraints = false
         videoPauseResumeField.translatesAutoresizingMaskIntoConstraints = false
@@ -382,6 +396,43 @@ final class SettingsWindowController: NSWindowController {
         return content
     }
 
+    private func makeAboutTabView(width: CGFloat) -> NSView {
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 500))
+
+        appVersionLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        appVersionValueLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        appVersionLabel.translatesAutoresizingMaskIntoConstraints = false
+        appVersionValueLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        configureLinkButton(githubLinkButton)
+        configureLinkButton(donatLinkButton)
+
+        let linksStack = NSStackView(views: [githubLinkButton, donatLinkButton])
+        linksStack.orientation = .vertical
+        linksStack.alignment = .leading
+        linksStack.spacing = 8
+        linksStack.translatesAutoresizingMaskIntoConstraints = false
+
+        content.addSubview(appVersionLabel)
+        content.addSubview(appVersionValueLabel)
+        content.addSubview(linksStack)
+
+        NSLayoutConstraint.activate([
+            appVersionLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 8),
+            appVersionLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
+
+            appVersionValueLabel.leadingAnchor.constraint(equalTo: appVersionLabel.trailingAnchor, constant: 10),
+            appVersionValueLabel.firstBaselineAnchor.constraint(equalTo: appVersionLabel.firstBaselineAnchor),
+            appVersionValueLabel.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -8),
+
+            linksStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 8),
+            linksStack.topAnchor.constraint(equalTo: appVersionLabel.bottomAnchor, constant: 18),
+            linksStack.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -8)
+        ])
+
+        return content
+    }
+
     private func makeSwitchContainer(_ toggle: NSSwitch, width: CGFloat) -> NSView {
         let container = NSView(frame: .zero)
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -395,6 +446,31 @@ final class SettingsWindowController: NSWindowController {
             toggle.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
         return container
+    }
+
+    private func configureLinkButton(_ button: NSButton) {
+        button.isBordered = false
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.contentTintColor = .linkColor
+        button.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = button.title
+        button.attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .foregroundColor: NSColor.linkColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ]
+        )
+    }
+
+    private func appVersionString() -> String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        guard !build.isEmpty, build != "0", build != version else {
+            return version
+        }
+        return "\(version) (\(build))"
     }
 
     private func makeFolderControl(pathField: NSTextField, button: NSButton, width: CGFloat) -> NSView {
@@ -492,7 +568,13 @@ final class SettingsWindowController: NSWindowController {
         chooseVideosButton.action = #selector(chooseVideosDirectory)
 
         donateButton.target = self
-        donateButton.action = #selector(openDonateLink)
+        donateButton.action = #selector(openDonatLink)
+
+        githubLinkButton.target = self
+        githubLinkButton.action = #selector(openGitHubLink)
+
+        donatLinkButton.target = self
+        donatLinkButton.action = #selector(openDonatLink)
     }
 
     private func rebuildLanguagePopupTitles() {
@@ -681,7 +763,15 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc
-    private func openDonateLink() {
+    private func openGitHubLink() {
+        guard let url = URL(string: "https://github.com/medusa4111/Cliptara") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc
+    private func openDonatLink() {
         guard let url = URL(string: "https://www.donationalerts.com/r/medusa411") else {
             return
         }

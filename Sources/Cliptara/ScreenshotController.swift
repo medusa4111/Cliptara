@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 enum ScreenshotCaptureResult {
@@ -36,6 +37,9 @@ final class ScreenshotController: @unchecked Sendable {
 
         let result = try await runScreencapture(arguments: build.arguments)
         if result.status == 0 {
+            if action == .copyAndSave, let destinationURL = build.destinationURL {
+                copyImageToClipboard(from: destinationURL)
+            }
             if let destinationURL = build.destinationURL {
                 return .saved(destinationURL)
             }
@@ -81,6 +85,10 @@ final class ScreenshotController: @unchecked Sendable {
                     ? Localizer.text("Не удалось сделать скриншот экрана.", "Could not capture full-screen screenshot.")
                     : result.stderr
             )
+        }
+
+        if action == .copyAndSave, let destinationURL = build.destinationURL {
+            copyImageToClipboard(from: destinationURL)
         }
 
         if let destinationURL = build.destinationURL {
@@ -134,6 +142,8 @@ final class ScreenshotController: @unchecked Sendable {
             arguments.append("-c")
             return (arguments, nil)
         case .saveToFiles:
+            fallthrough
+        case .copyAndSave:
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let destinationURL = makeScreenshotURL(directory: directory, format: format)
             if FileManager.default.fileExists(atPath: destinationURL.path) {
@@ -143,6 +153,15 @@ final class ScreenshotController: @unchecked Sendable {
             arguments.append(destinationURL.path)
             return (arguments, destinationURL)
         }
+    }
+
+    private func copyImageToClipboard(from url: URL) {
+        guard let image = NSImage(contentsOf: url) else {
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([image])
     }
 
     private func makeScreenshotURL(directory: URL, format: ScreenshotFileFormat) -> URL {
