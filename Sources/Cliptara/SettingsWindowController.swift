@@ -54,7 +54,6 @@ final class SettingsWindowController: NSWindowController {
     private let donatLinkButton = NSButton(title: "Donat", target: nil, action: nil)
 
     private let footerLabel = NSTextField(labelWithString: "")
-    private let donateButton = NSButton(title: "", target: nil, action: nil)
 
     private let areaField: HotkeyRecorderField
     private let fullField: HotkeyRecorderField
@@ -99,11 +98,11 @@ final class SettingsWindowController: NSWindowController {
     private let videoQualityOptions = VideoQualityPreset.allCases
     private let videoStartDelayOptions = VideoStartDelayOption.allCases
 
-    private let windowWidth: CGFloat = 700
-    private let tabContainerWidth: CGFloat = 640
-    private let tabContentWidth: CGFloat = 620
+    private let windowWidth: CGFloat = 660
+    private let tabContainerWidth: CGFloat = 620
+    private let tabContentWidth: CGFloat = 600
     private let labelsWidth: CGFloat = 220
-    private let controlsWidth: CGFloat = 290
+    private let controlsWidth: CGFloat = 280
 
     init(settings: AppSettings) {
         areaField = HotkeyRecorderField(hotkey: settings.hotkeys.areaCapture)
@@ -200,7 +199,6 @@ final class SettingsWindowController: NSWindowController {
 
         chooseScreenshotsButton.title = Localizer.text("Выбрать", "Choose")
         chooseVideosButton.title = Localizer.text("Выбрать", "Choose")
-        donateButton.title = Localizer.text("Донат", "Donate")
         githubLinkButton.title = "GitHub"
         donatLinkButton.title = "Donat"
         configureLinkButton(githubLinkButton)
@@ -222,7 +220,7 @@ final class SettingsWindowController: NSWindowController {
 
     private func buildWindow() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: 590),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -252,7 +250,7 @@ final class SettingsWindowController: NSWindowController {
         tabView.translatesAutoresizingMaskIntoConstraints = false
         tabView.tabViewType = .topTabsBezelBorder
         tabView.widthAnchor.constraint(equalToConstant: tabContainerWidth).isActive = true
-        tabView.heightAnchor.constraint(equalToConstant: 510).isActive = true
+        tabView.heightAnchor.constraint(equalToConstant: 470).isActive = true
 
         mainTabItem.view = makeMainTabView(width: tabContentWidth)
         videoTabItem.view = makeVideoTabView(width: tabContentWidth)
@@ -267,21 +265,6 @@ final class SettingsWindowController: NSWindowController {
         separator.translatesAutoresizingMaskIntoConstraints = false
         separator.widthAnchor.constraint(equalToConstant: tabContainerWidth).isActive = true
         rootStack.addArrangedSubview(separator)
-
-        donateButton.bezelStyle = .rounded
-        donateButton.translatesAutoresizingMaskIntoConstraints = false
-        donateButton.widthAnchor.constraint(equalToConstant: 120).isActive = true
-
-        let donateContainer = NSView(frame: .zero)
-        donateContainer.translatesAutoresizingMaskIntoConstraints = false
-        donateContainer.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        donateContainer.widthAnchor.constraint(equalToConstant: tabContainerWidth).isActive = true
-        donateContainer.addSubview(donateButton)
-        NSLayoutConstraint.activate([
-            donateButton.centerXAnchor.constraint(equalTo: donateContainer.centerXAnchor),
-            donateButton.centerYAnchor.constraint(equalTo: donateContainer.centerYAnchor)
-        ])
-        rootStack.addArrangedSubview(donateContainer)
 
         footerLabel.alignment = .center
         footerLabel.textColor = .secondaryLabelColor
@@ -300,7 +283,7 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private func makeMainTabView(width: CGFloat) -> NSView {
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 500))
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 450))
 
         areaField.translatesAutoresizingMaskIntoConstraints = false
         fullField.translatesAutoresizingMaskIntoConstraints = false
@@ -344,7 +327,7 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private func makeVideoTabView(width: CGFloat) -> NSView {
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 500))
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 450))
 
         videoStartStopField.translatesAutoresizingMaskIntoConstraints = false
         videoPauseResumeField.translatesAutoresizingMaskIntoConstraints = false
@@ -397,7 +380,7 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private func makeAboutTabView(width: CGFloat) -> NSView {
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 500))
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 450))
 
         appVersionLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         appVersionValueLabel.font = .systemFont(ofSize: 13, weight: .regular)
@@ -407,27 +390,25 @@ final class SettingsWindowController: NSWindowController {
         configureLinkButton(githubLinkButton)
         configureLinkButton(donatLinkButton)
 
-        let linksStack = NSStackView(views: [githubLinkButton, donatLinkButton])
-        linksStack.orientation = .vertical
-        linksStack.alignment = .leading
-        linksStack.spacing = 8
-        linksStack.translatesAutoresizingMaskIntoConstraints = false
+        let versionRow = NSStackView(views: [appVersionLabel, appVersionValueLabel])
+        versionRow.orientation = .horizontal
+        versionRow.alignment = .firstBaseline
+        versionRow.spacing = 8
+        versionRow.translatesAutoresizingMaskIntoConstraints = false
 
-        content.addSubview(appVersionLabel)
-        content.addSubview(appVersionValueLabel)
-        content.addSubview(linksStack)
+        let aboutStack = NSStackView(views: [versionRow, githubLinkButton, donatLinkButton])
+        aboutStack.orientation = .vertical
+        aboutStack.alignment = .centerX
+        aboutStack.spacing = 10
+        aboutStack.translatesAutoresizingMaskIntoConstraints = false
+
+        content.addSubview(aboutStack)
 
         NSLayoutConstraint.activate([
-            appVersionLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 8),
-            appVersionLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
-
-            appVersionValueLabel.leadingAnchor.constraint(equalTo: appVersionLabel.trailingAnchor, constant: 10),
-            appVersionValueLabel.firstBaselineAnchor.constraint(equalTo: appVersionLabel.firstBaselineAnchor),
-            appVersionValueLabel.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -8),
-
-            linksStack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 8),
-            linksStack.topAnchor.constraint(equalTo: appVersionLabel.bottomAnchor, constant: 18),
-            linksStack.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -8)
+            aboutStack.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            aboutStack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            aboutStack.leadingAnchor.constraint(greaterThanOrEqualTo: content.leadingAnchor, constant: 8),
+            aboutStack.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -8)
         ])
 
         return content
@@ -566,9 +547,6 @@ final class SettingsWindowController: NSWindowController {
 
         chooseVideosButton.target = self
         chooseVideosButton.action = #selector(chooseVideosDirectory)
-
-        donateButton.target = self
-        donateButton.action = #selector(openDonatLink)
 
         githubLinkButton.target = self
         githubLinkButton.action = #selector(openGitHubLink)

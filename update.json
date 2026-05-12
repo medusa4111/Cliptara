@@ -1,6 +1,6 @@
 {
-  "version": "1.4.2",
-  "build": "12",
+  "version": "1.4.3",
+  "build": "13",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "Added a new About tab in settings, introduced screenshot action \"Copy and save\", reduced settings window width, and improved localization coverage."
+  "release_notes": "Reduced settings window size, removed bottom Donate button, and centered the About tab content."
 }
