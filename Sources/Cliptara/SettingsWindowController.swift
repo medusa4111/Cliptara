@@ -102,12 +102,9 @@ final class SettingsWindowController: NSWindowController {
     private let languageOptions: [AppLanguage] = [
         .russian,
         .english,
-        .german,
-        .french,
-        .spanish,
+        .polish,
         .chineseSimplified,
-        .chineseTraditional,
-        .arabic
+        .chineseTraditional
     ]
     private let screenshotActionOptions: [ScreenshotAction] = [.copyToClipboard, .saveToFiles, .copyAndSave]
     private let screenshotFormatOptions: [ScreenshotFileFormat] = [.png, .jpg, .webp]
@@ -629,7 +626,7 @@ final class SettingsWindowController: NSWindowController {
     private func makeLanguageSelector() -> NSView {
         languageButtons.removeAll()
 
-        let languageRows = languageOptions.chunked(into: 4).map { languages in
+        let languageRows = languageOptions.chunked(into: 5).map { languages in
             languages.map { language -> NSView in
                 let button = LanguageChoiceButton(
                     language: language,
@@ -638,7 +635,7 @@ final class SettingsWindowController: NSWindowController {
                     action: #selector(languageChoicePressed(_:))
                 )
                 button.translatesAutoresizingMaskIntoConstraints = false
-                button.widthAnchor.constraint(equalToConstant: 126).isActive = true
+                button.widthAnchor.constraint(equalToConstant: 110).isActive = true
                 button.heightAnchor.constraint(equalToConstant: 54).isActive = true
                 languageButtons[language] = button
                 return button
@@ -796,13 +793,10 @@ final class SettingsWindowController: NSWindowController {
     private func languageCode(for language: AppLanguage) -> String {
         switch language {
         case .russian: return "RU"
-        case .english: return "EN"
-        case .german: return "DE"
-        case .french: return "FR"
-        case .spanish: return "ES"
+        case .english: return "US"
+        case .polish: return "PL"
         case .chineseSimplified: return "简"
         case .chineseTraditional: return "繁"
-        case .arabic: return "AR"
         }
     }
 

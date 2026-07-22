@@ -3,12 +3,9 @@ import Foundation
 enum AppLanguage: String, CaseIterable {
     case russian
     case english
-    case german
-    case french
-    case spanish
+    case polish
     case chineseSimplified
     case chineseTraditional
-    case arabic
 
     static var defaultFromSystem: AppLanguage {
         guard let preferred = Locale.preferredLanguages.first?.lowercased() else {
@@ -16,10 +13,7 @@ enum AppLanguage: String, CaseIterable {
         }
 
         if preferred.hasPrefix("ru") { return .russian }
-        if preferred.hasPrefix("de") { return .german }
-        if preferred.hasPrefix("fr") { return .french }
-        if preferred.hasPrefix("es") { return .spanish }
-        if preferred.hasPrefix("ar") { return .arabic }
+        if preferred.hasPrefix("pl") { return .polish }
 
         if preferred.hasPrefix("zh-hant")
             || preferred.hasPrefix("zh-tw")
@@ -39,19 +33,13 @@ enum AppLanguage: String, CaseIterable {
         case .russian:
             return "Русский"
         case .english:
-            return "English"
-        case .german:
-            return "Deutsch"
-        case .french:
-            return "Français"
-        case .spanish:
-            return "Español"
+            return "English (US)"
+        case .polish:
+            return "Polski"
         case .chineseSimplified:
             return "简体中文"
         case .chineseTraditional:
             return "繁體中文"
-        case .arabic:
-            return "العربية"
         }
     }
 }

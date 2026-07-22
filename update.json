@@ -1,6 +1,6 @@
 {
-  "version": "1.4.4",
-  "build": "14",
+  "version": "1.4.5",
+  "build": "15",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "Новый интерфейс настроек с боковой панелью, карточками и плитками языков. Обновлены переводы. / Redesigned settings with a sidebar, cards, language selector, and refreshed localization."
+  "release_notes": "Оставлены пять языков интерфейса: русский, English (US), Polski, упрощённый и традиционный китайский. Добавлена полная польская локализация. / Cliptara now offers five interface languages: Russian, English (US), Polish, Simplified Chinese, and Traditional Chinese. Full Polish localization added."
 }
