@@ -1,6 +1,6 @@
 {
-  "version": "1.4.3",
-  "build": "13",
+  "version": "1.4.4",
+  "build": "14",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "Reduced settings window size, removed bottom Donate button, and centered the About tab content."
+  "release_notes": "Новый интерфейс настроек с боковой панелью, карточками и плитками языков. Обновлены переводы. / Redesigned settings with a sidebar, cards, language selector, and refreshed localization."
 }
