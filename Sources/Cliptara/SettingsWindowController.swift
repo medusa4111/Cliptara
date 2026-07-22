@@ -27,6 +27,7 @@ final class SettingsWindowController: NSWindowController {
     var onFullHotkeyChanged: ((Hotkey) -> Bool)?
     var onVideoHotkeyChanged: ((Hotkey) -> Bool)?
     var onVideoPauseResumeHotkeyChanged: ((Hotkey) -> Bool)?
+    var onHotkeyCaptureStateChanged: ((Bool) -> Void)?
     var onLanguageChanged: ((AppLanguage) -> Void)?
     var onScreenshotActionChanged: ((ScreenshotAction) -> Void)?
     var onScreenshotFormatChanged: ((ScreenshotFileFormat) -> Void)?
@@ -887,6 +888,12 @@ final class SettingsWindowController: NSWindowController {
         }
         videoPauseResumeField.onAttemptChange = { [weak self] hotkey in
             self?.onVideoPauseResumeHotkeyChanged?(hotkey) ?? false
+        }
+
+        for field in [areaField, fullField, videoStartStopField, videoPauseResumeField] {
+            field.onCaptureStateChanged = { [weak self] isCapturing in
+                self?.onHotkeyCaptureStateChanged?(isCapturing)
+            }
         }
 
         languagePopup.target = self

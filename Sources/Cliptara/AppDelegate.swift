@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unchecked Sendable {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unchecked Sendable {
     private let settings = AppSettings.shared
     private let hotkeyManager = HotkeyManager()
     private let launchAtLoginManager = LaunchAtLoginManager()
@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
     private var openVideosFolderMenuItem: NSMenuItem?
     private var compressVideoMenuItem: NSMenuItem?
     private var quitMenuItem: NSMenuItem?
+    private var isStatusMenuOpen = false
+    private var pendingStatusMenuHotkeyAction: (@MainActor @Sendable () -> Void)?
 
     private var settingsWindowController: SettingsWindowController?
     private var videoCompressionWindowController: VideoCompressionWindowController?
@@ -46,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
     private func buildStatusMenu() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
+        menu.delegate = self
 
         let settingsItem = NSMenuItem(title: "", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
@@ -116,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
             return tryApplyHotkeys(config)
         }
 
+        controller.onHotkeyCaptureStateChanged = { [weak self] isCapturing in
+            self?.hotkeyManager.setEnabled(!isCapturing)
+        }
+
         controller.onLanguageChanged = { [weak self] language in
             guard let self else { return }
             settings.setLanguage(language)
@@ -181,7 +188,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         }
 
         settingsWindowController = controller
-        settingsWindowController?.window?.delegate = self
     }
 
     private func setupVideoCompressionWindow() {
@@ -190,26 +196,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
 
     private func configureHotkeys() {
         hotkeyManager.onAreaCapture = { [weak self] in
-            Task { @MainActor in
-                await self?.handleAreaScreenshotHotkey()
+            self?.performAfterClosingStatusMenu {
+                Task { @MainActor in
+                    await self?.handleAreaScreenshotHotkey()
+                }
             }
         }
 
         hotkeyManager.onFullCapture = { [weak self] in
-            Task { @MainActor in
-                await self?.handleFullScreenshotHotkey()
+            self?.performAfterClosingStatusMenu {
+                Task { @MainActor in
+                    await self?.handleFullScreenshotHotkey()
+                }
             }
         }
 
         hotkeyManager.onVideoToggle = { [weak self] in
-            Task { @MainActor in
-                await self?.handleVideoToggleHotkey()
+            self?.performAfterClosingStatusMenu {
+                Task { @MainActor in
+                    await self?.handleVideoToggleHotkey()
+                }
             }
         }
 
         hotkeyManager.onVideoPauseResume = { [weak self] in
-            Task { @MainActor in
-                await self?.handleVideoPauseResumeHotkey()
+            self?.performAfterClosingStatusMenu {
+                Task { @MainActor in
+                    await self?.handleVideoPauseResumeHotkey()
+                }
             }
         }
 
@@ -277,7 +291,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
     }
 
     private func handleAreaScreenshotHotkey() async {
-        closeStatusMenuIfNeeded()
         try? await Task.sleep(nanoseconds: 180_000_000)
 
         do {
@@ -486,17 +499,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         alert.runModal()
     }
 
-    private func closeStatusMenuIfNeeded() {
-        guard let statusItem, let menu = statusMenu else {
+    private func performAfterClosingStatusMenu(_ action: @escaping @MainActor @Sendable () -> Void) {
+        guard isStatusMenuOpen, let menu = statusMenu else {
+            action()
             return
         }
 
-        menu.cancelTracking()
-        if statusItem.menu != nil {
-            statusItem.menu = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                guard let self else { return }
-                statusItem.menu = self.statusMenu
+        guard pendingStatusMenuHotkeyAction == nil else {
+            return
+        }
+        pendingStatusMenuHotkeyAction = action
+        menu.cancelTrackingWithoutAnimation()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        if menu === statusMenu {
+            isStatusMenuOpen = true
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        if menu === statusMenu {
+            isStatusMenuOpen = false
+            let action = pendingStatusMenuHotkeyAction
+            pendingStatusMenuHotkeyAction = nil
+            if let action {
+                DispatchQueue.main.async(execute: action)
             }
         }
     }
@@ -634,31 +662,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @unc
         }
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
-        guard isSettingsWindow(notification.object) else {
-            return
-        }
-        hotkeyManager.setEnabled(false)
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        guard isSettingsWindow(notification.object) else {
-            return
-        }
-        hotkeyManager.setEnabled(true)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        guard isSettingsWindow(notification.object) else {
-            return
-        }
-        hotkeyManager.setEnabled(true)
-    }
-
-    private func isSettingsWindow(_ object: Any?) -> Bool {
-        guard let window = object as? NSWindow else {
-            return false
-        }
-        return window === settingsWindowController?.window
-    }
 }

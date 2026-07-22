@@ -9,6 +9,7 @@ final class HotkeyRecorderField: NSTextField {
     }
 
     var onAttemptChange: ((Hotkey) -> Bool)?
+    var onCaptureStateChanged: ((Bool) -> Void)?
     private var keyMonitor: Any?
     private var isCapturing = false
 
@@ -76,6 +77,7 @@ final class HotkeyRecorderField: NSTextField {
         }
 
         isCapturing = true
+        onCaptureStateChanged?(true)
         stringValue = Localizer.text("Нажмите сочетание…", "Press shortcut…")
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -96,6 +98,7 @@ final class HotkeyRecorderField: NSTextField {
             self.keyMonitor = nil
         }
         isCapturing = false
+        onCaptureStateChanged?(false)
         if restoreDisplay {
             stringValue = hotkey.displayString
         }

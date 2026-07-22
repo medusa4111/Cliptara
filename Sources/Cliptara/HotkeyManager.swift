@@ -10,10 +10,10 @@ final class HotkeyManager {
         static let videoPauseResume: UInt32 = 4
     }
 
-    var onAreaCapture: (() -> Void)?
-    var onFullCapture: (() -> Void)?
-    var onVideoToggle: (() -> Void)?
-    var onVideoPauseResume: (() -> Void)?
+    var onAreaCapture: (@MainActor () -> Void)?
+    var onFullCapture: (@MainActor () -> Void)?
+    var onVideoToggle: (@MainActor () -> Void)?
+    var onVideoPauseResume: (@MainActor () -> Void)?
 
     private var eventHandlerRef: EventHandlerRef?
     private var hotkeyRefs: [EventHotKeyRef] = []
@@ -53,7 +53,7 @@ final class HotkeyManager {
         let userData = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
         InstallEventHandler(
-            GetApplicationEventTarget(),
+            GetEventDispatcherTarget(),
             { _, eventRef, userData in
                 guard let eventRef, let userData else {
                     return noErr
@@ -87,17 +87,32 @@ final class HotkeyManager {
     }
 
     private func handleHotkey(_ id: UInt32) {
+        let action: (@MainActor () -> Void)?
         switch id {
         case HotkeyID.area:
-            onAreaCapture?()
+            action = onAreaCapture
         case HotkeyID.full:
-            onFullCapture?()
+            action = onFullCapture
         case HotkeyID.videoToggle:
-            onVideoToggle?()
+            action = onVideoToggle
         case HotkeyID.videoPauseResume:
-            onVideoPauseResume?()
+            action = onVideoPauseResume
         default:
-            break
+            action = nil
+        }
+
+        guard let action else {
+            return
+        }
+
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                action()
+            }
+        } else {
+            Task { @MainActor in
+                action()
+            }
         }
     }
 
@@ -109,7 +124,7 @@ final class HotkeyManager {
             hotkey.keyCode,
             hotkey.carbonModifiers,
             eventHotKeyID,
-            GetApplicationEventTarget(),
+            GetEventDispatcherTarget(),
             0,
             &hotkeyRef
         )
