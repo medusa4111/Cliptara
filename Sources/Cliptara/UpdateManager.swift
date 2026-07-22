@@ -80,8 +80,11 @@ final class UpdateManager {
 
         let data: Data
         do {
-            let response = try await urlSession.data(from: manifestURL)
-            data = response.0
+            let (responseData, response) = try await urlSession.data(for: uncachedRequest(for: manifestURL))
+            guard isSuccessfulHTTPResponse(response) else {
+                throw UpdateManagerError.updateCheckFailed
+            }
+            data = responseData
         } catch {
             throw UpdateManagerError.updateCheckFailed
         }
@@ -155,8 +158,11 @@ final class UpdateManager {
     private func downloadUpdatePackage(from remoteURL: URL, version: String) async throws -> URL {
         let temporaryDownloadURL: URL
         do {
-            let response = try await urlSession.download(from: remoteURL)
-            temporaryDownloadURL = response.0
+            let (downloadURL, response) = try await urlSession.download(for: uncachedRequest(for: remoteURL))
+            guard isSuccessfulHTTPResponse(response) else {
+                throw UpdateManagerError.updatePackageDownloadFailed
+            }
+            temporaryDownloadURL = downloadURL
         } catch {
             throw UpdateManagerError.updatePackageDownloadFailed
         }
@@ -173,6 +179,29 @@ final class UpdateManager {
         } catch {
             throw UpdateManagerError.updatePackageDownloadFailed
         }
+    }
+
+    private func uncachedRequest(for url: URL) -> URLRequest {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        var queryItems = components?.queryItems ?? []
+        queryItems.append(URLQueryItem(name: "cliptara_cache_bust", value: UUID().uuidString))
+        components?.queryItems = queryItems
+
+        var request = URLRequest(
+            url: components?.url ?? url,
+            cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
+            timeoutInterval: 30
+        )
+        request.setValue("no-cache, no-store, max-age=0", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        return request
+    }
+
+    private func isSuccessfulHTTPResponse(_ response: URLResponse) -> Bool {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return true
+        }
+        return (200...299).contains(httpResponse.statusCode)
     }
 
     private func installFromDMG(_ dmgURL: URL) throws {
