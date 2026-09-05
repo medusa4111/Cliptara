@@ -8,9 +8,11 @@ final class HotkeyManager {
         static let full: UInt32 = 2
         static let videoToggle: UInt32 = 3
         static let videoPauseResume: UInt32 = 4
+        static let window: UInt32 = 5
     }
 
     var onAreaCapture: (@MainActor () -> Void)?
+    var onWindowCapture: (@MainActor () -> Void)?
     var onFullCapture: (@MainActor () -> Void)?
     var onVideoToggle: (@MainActor () -> Void)?
     var onVideoPauseResume: (@MainActor () -> Void)?
@@ -91,6 +93,8 @@ final class HotkeyManager {
         switch id {
         case HotkeyID.area:
             action = onAreaCapture
+        case HotkeyID.window:
+            action = onWindowCapture
         case HotkeyID.full:
             action = onFullCapture
         case HotkeyID.videoToggle:
@@ -148,6 +152,7 @@ final class HotkeyManager {
         }
 
         register(hotkey: configuration.areaCapture, id: HotkeyID.area)
+        register(hotkey: configuration.windowCapture, id: HotkeyID.window)
         register(hotkey: configuration.fullCapture, id: HotkeyID.full)
         register(hotkey: configuration.videoToggle, id: HotkeyID.videoToggle)
         register(hotkey: configuration.videoPauseResume, id: HotkeyID.videoPauseResume)

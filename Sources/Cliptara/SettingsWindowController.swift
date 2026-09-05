@@ -24,6 +24,7 @@ private enum SettingsSection: String, CaseIterable {
 @MainActor
 final class SettingsWindowController: NSWindowController {
     var onAreaHotkeyChanged: ((Hotkey) -> Bool)?
+    var onWindowHotkeyChanged: ((Hotkey) -> Bool)?
     var onFullHotkeyChanged: ((Hotkey) -> Bool)?
     var onVideoHotkeyChanged: ((Hotkey) -> Bool)?
     var onVideoPauseResumeHotkeyChanged: ((Hotkey) -> Bool)?
@@ -52,6 +53,7 @@ final class SettingsWindowController: NSWindowController {
     private var selectedSection: SettingsSection = .general
 
     private let areaLabel = NSTextField(labelWithString: "")
+    private let windowLabel = NSTextField(labelWithString: "")
     private let fullLabel = NSTextField(labelWithString: "")
     private let languageLabel = NSTextField(labelWithString: "")
     private let screenshotActionLabel = NSTextField(labelWithString: "")
@@ -77,6 +79,7 @@ final class SettingsWindowController: NSWindowController {
     private let donatLinkButton = NSButton(title: "Donat", target: nil, action: nil)
 
     private let areaField: HotkeyRecorderField
+    private let windowField: HotkeyRecorderField
     private let fullField: HotkeyRecorderField
     private let videoStartStopField: HotkeyRecorderField
     private let videoPauseResumeField: HotkeyRecorderField
@@ -124,6 +127,7 @@ final class SettingsWindowController: NSWindowController {
 
     init(settings: AppSettings) {
         areaField = HotkeyRecorderField(hotkey: settings.hotkeys.areaCapture)
+        windowField = HotkeyRecorderField(hotkey: settings.hotkeys.windowCapture)
         fullField = HotkeyRecorderField(hotkey: settings.hotkeys.fullCapture)
         videoStartStopField = HotkeyRecorderField(hotkey: settings.hotkeys.videoToggle)
         videoPauseResumeField = HotkeyRecorderField(hotkey: settings.hotkeys.videoPauseResume)
@@ -157,6 +161,7 @@ final class SettingsWindowController: NSWindowController {
         let settings = AppSettings.shared
 
         areaField.hotkey = settings.hotkeys.areaCapture
+        windowField.hotkey = settings.hotkeys.windowCapture
         fullField.hotkey = settings.hotkeys.fullCapture
         videoStartStopField.hotkey = settings.hotkeys.videoToggle
         videoPauseResumeField.hotkey = settings.hotkeys.videoPauseResume
@@ -212,6 +217,7 @@ final class SettingsWindowController: NSWindowController {
         sidebarButtons[.about]?.updateTitle(Localizer.text("О программе", "About"))
 
         areaLabel.stringValue = Localizer.text("Скриншот области:", "Area screenshot:")
+        windowLabel.stringValue = Localizer.text("Скриншот окна:", "Window screenshot:")
         fullLabel.stringValue = Localizer.text("Скриншот экрана:", "Screen screenshot:")
         languageLabel.stringValue = Localizer.text("Язык:", "Language:")
         screenshotActionLabel.stringValue = Localizer.text("Действие скриншота:", "Screenshot action:")
@@ -463,10 +469,12 @@ final class SettingsWindowController: NSWindowController {
         }
 
         areaField.translatesAutoresizingMaskIntoConstraints = false
+        windowField.translatesAutoresizingMaskIntoConstraints = false
         fullField.translatesAutoresizingMaskIntoConstraints = false
         videoStartStopField.translatesAutoresizingMaskIntoConstraints = false
         videoPauseResumeField.translatesAutoresizingMaskIntoConstraints = false
         areaField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
+        windowField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
         fullField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
         videoStartStopField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
         videoPauseResumeField.widthAnchor.constraint(equalToConstant: controlsWidth).isActive = true
@@ -496,6 +504,7 @@ final class SettingsWindowController: NSWindowController {
     private func makeScreenshotsPage() -> NSView {
         let hotkeysGrid = makeFormGrid(rows: [
             [areaLabel, areaField],
+            [windowLabel, windowField],
             [fullLabel, fullField]
         ])
         let hotkeysCard = makeCard(titleKey: "card.screenshots.hotkeys", content: hotkeysGrid)
@@ -880,6 +889,9 @@ final class SettingsWindowController: NSWindowController {
         areaField.onAttemptChange = { [weak self] hotkey in
             self?.onAreaHotkeyChanged?(hotkey) ?? false
         }
+        windowField.onAttemptChange = { [weak self] hotkey in
+            self?.onWindowHotkeyChanged?(hotkey) ?? false
+        }
         fullField.onAttemptChange = { [weak self] hotkey in
             self?.onFullHotkeyChanged?(hotkey) ?? false
         }
@@ -890,7 +902,7 @@ final class SettingsWindowController: NSWindowController {
             self?.onVideoPauseResumeHotkeyChanged?(hotkey) ?? false
         }
 
-        for field in [areaField, fullField, videoStartStopField, videoPauseResumeField] {
+        for field in [areaField, windowField, fullField, videoStartStopField, videoPauseResumeField] {
             field.onCaptureStateChanged = { [weak self] isCapturing in
                 self?.onHotkeyCaptureStateChanged?(isCapturing)
             }

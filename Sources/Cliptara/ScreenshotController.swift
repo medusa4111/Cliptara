@@ -97,6 +97,44 @@ final class ScreenshotController: @unchecked Sendable {
         return .copiedToClipboard
     }
 
+    func captureWindow(
+        windowID: CGWindowID,
+        action: ScreenshotAction,
+        format: ScreenshotFileFormat,
+        muteSound: Bool,
+        directory: URL
+    ) async throws -> ScreenshotCaptureResult {
+        let build = try prepareArguments(
+            action: action,
+            format: format,
+            interactive: false,
+            additionalArguments: ["-l", String(windowID)],
+            muteSound: muteSound,
+            directory: directory
+        )
+
+        let result = try await runScreencapture(arguments: build.arguments)
+        guard result.status == 0 else {
+            if let destinationURL = build.destinationURL {
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
+            throw ScreenshotControllerError.captureFailed(
+                result.stderr.isEmpty
+                    ? Localizer.text("Не удалось сделать скриншот выбранного окна.", "Could not capture selected window.")
+                    : result.stderr
+            )
+        }
+
+        if action == .copyAndSave, let destinationURL = build.destinationURL {
+            copyImageToClipboard(from: destinationURL)
+        }
+
+        if let destinationURL = build.destinationURL {
+            return .saved(destinationURL)
+        }
+        return .copiedToClipboard
+    }
+
     private func runScreencapture(arguments: [String]) async throws -> (status: Int32, stderr: String) {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
@@ -126,6 +164,7 @@ final class ScreenshotController: @unchecked Sendable {
         action: ScreenshotAction,
         format: ScreenshotFileFormat,
         interactive: Bool,
+        additionalArguments: [String] = [],
         muteSound: Bool,
         directory: URL
     ) throws -> (arguments: [String], destinationURL: URL?) {
@@ -136,6 +175,7 @@ final class ScreenshotController: @unchecked Sendable {
         if interactive {
             arguments.append("-i")
         }
+        arguments.append(contentsOf: additionalArguments)
 
         switch action {
         case .copyToClipboard:

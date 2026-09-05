@@ -1,6 +1,6 @@
 {
-  "version": "1.4.6",
-  "build": "16",
+  "version": "1.5.0",
+  "build": "17",
   "download_url": "https://github.com/medusa4111/Cliptara/releases/latest/download/Cliptara.dmg",
-  "release_notes": "Исправлена работа горячих клавиш при открытом меню Cliptara и окне настроек. Меню теперь закрывается перед выполнением снимка или команды записи. / Fixed global hotkeys while the Cliptara menu or Settings window is open. The menu now closes before a screenshot or recording action runs."
+  "release_notes": "Добавлен скриншот отдельного окна: наведите курсор, выберите подсвеченное окно и нажмите левую кнопку мыши. Горячую клавишу Ctrl+Shift+1 можно изменить в настройках; Esc или правая кнопка мыши отменяют выбор. / Added individual window screenshots: hover over a window, select the highlighted window, and left-click. The Ctrl+Shift+1 hotkey is configurable; Escape or right-click cancels selection."
 }

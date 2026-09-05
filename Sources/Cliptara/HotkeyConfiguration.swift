@@ -119,19 +119,28 @@ struct Hotkey: Codable, Equatable {
 
 struct HotkeyConfiguration: Codable, Equatable {
     var areaCapture: Hotkey
+    var windowCapture: Hotkey
     var fullCapture: Hotkey
     var videoToggle: Hotkey
     var videoPauseResume: Hotkey
 
     private enum CodingKeys: String, CodingKey {
         case areaCapture
+        case windowCapture
         case fullCapture
         case videoToggle
         case videoPauseResume
     }
 
-    init(areaCapture: Hotkey, fullCapture: Hotkey, videoToggle: Hotkey, videoPauseResume: Hotkey) {
+    init(
+        areaCapture: Hotkey,
+        windowCapture: Hotkey,
+        fullCapture: Hotkey,
+        videoToggle: Hotkey,
+        videoPauseResume: Hotkey
+    ) {
         self.areaCapture = areaCapture
+        self.windowCapture = windowCapture
         self.fullCapture = fullCapture
         self.videoToggle = videoToggle
         self.videoPauseResume = videoPauseResume
@@ -140,6 +149,11 @@ struct HotkeyConfiguration: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         areaCapture = try container.decode(Hotkey.self, forKey: .areaCapture)
+        windowCapture = try container.decodeIfPresent(Hotkey.self, forKey: .windowCapture)
+            ?? Hotkey(
+                keyCode: UInt32(kVK_ANSI_1),
+                carbonModifiers: UInt32(controlKey) | UInt32(shiftKey)
+            )
         fullCapture = try container.decode(Hotkey.self, forKey: .fullCapture)
         videoToggle = try container.decodeIfPresent(Hotkey.self, forKey: .videoToggle)
             ?? Hotkey(keyCode: UInt32(kVK_ANSI_2), carbonModifiers: UInt32(controlKey))
@@ -149,6 +163,10 @@ struct HotkeyConfiguration: Codable, Equatable {
 
     static let `default` = HotkeyConfiguration(
         areaCapture: Hotkey(keyCode: UInt32(kVK_ANSI_Grave), carbonModifiers: UInt32(controlKey)),
+        windowCapture: Hotkey(
+            keyCode: UInt32(kVK_ANSI_1),
+            carbonModifiers: UInt32(controlKey) | UInt32(shiftKey)
+        ),
         fullCapture: Hotkey(keyCode: UInt32(kVK_ANSI_1), carbonModifiers: UInt32(controlKey)),
         videoToggle: Hotkey(keyCode: UInt32(kVK_ANSI_2), carbonModifiers: UInt32(controlKey)),
         videoPauseResume: Hotkey(keyCode: UInt32(kVK_ANSI_3), carbonModifiers: UInt32(controlKey))

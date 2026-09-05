@@ -7,12 +7,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     private let hotkeyManager = HotkeyManager()
     private let launchAtLoginManager = LaunchAtLoginManager()
     private let screenshotController = ScreenshotController()
+    private let windowSelectionController = WindowSelectionController()
     private let flashController = ScreenFlashController.shared
     private let screenRecorder = ScreenRecorder()
     private let updateManager = UpdateManager()
 
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
+    private var windowScreenshotMenuItem: NSMenuItem?
     private var settingsMenuItem: NSMenuItem?
     private var checkUpdatesMenuItem: NSMenuItem?
     private var openScreenshotsFolderMenuItem: NSMenuItem?
@@ -50,6 +52,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         let menu = NSMenu()
         menu.delegate = self
 
+        let windowScreenshotItem = NSMenuItem(
+            title: "",
+            action: #selector(captureWindowScreenshot),
+            keyEquivalent: ""
+        )
+        windowScreenshotItem.target = self
+        menu.addItem(windowScreenshotItem)
+        menu.addItem(.separator())
+
         let settingsItem = NSMenuItem(title: "", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -80,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
 
         self.statusItem = statusItem
         self.statusMenu = menu
+        self.windowScreenshotMenuItem = windowScreenshotItem
         self.settingsMenuItem = settingsItem
         self.checkUpdatesMenuItem = checkUpdatesItem
         self.openScreenshotsFolderMenuItem = openScreenshotsFolderItem
@@ -95,6 +107,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
             guard let self else { return false }
             var config = settings.hotkeys
             config.areaCapture = hotkey
+            return tryApplyHotkeys(config)
+        }
+
+        controller.onWindowHotkeyChanged = { [weak self] hotkey in
+            guard let self else { return false }
+            var config = settings.hotkeys
+            config.windowCapture = hotkey
             return tryApplyHotkeys(config)
         }
 
@@ -203,6 +222,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
             }
         }
 
+        hotkeyManager.onWindowCapture = { [weak self] in
+            self?.performAfterClosingStatusMenu {
+                Task { @MainActor in
+                    await self?.handleWindowScreenshot()
+                }
+            }
+        }
+
         hotkeyManager.onFullCapture = { [weak self] in
             self?.performAfterClosingStatusMenu {
                 Task { @MainActor in
@@ -245,6 +272,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     }
 
     private func validateHotkeyConflicts(_ configuration: HotkeyConfiguration) -> String? {
+        let windowHotkeyConflicts = [
+            configuration.areaCapture,
+            configuration.fullCapture,
+            configuration.videoToggle,
+            configuration.videoPauseResume
+        ].contains { configuration.windowCapture.matches($0) }
+
+        if windowHotkeyConflicts {
+            return Localizer.text(
+                "Горячая клавиша скриншота окна конфликтует с другой горячей клавишей.",
+                "Window screenshot hotkey conflicts with another hotkey."
+            )
+        }
+
         if configuration.areaCapture.matches(configuration.fullCapture) {
             return Localizer.text(
                 "Горячие клавиши для области и полного экрана не должны совпадать.",
@@ -288,6 +329,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         }
 
         return nil
+    }
+
+    private func handleWindowScreenshot() async {
+        guard !windowSelectionController.isSelecting else {
+            return
+        }
+
+        hotkeyManager.setEnabled(false)
+        defer {
+            hotkeyManager.setEnabled(true)
+        }
+
+        do {
+            guard let windowID = try await windowSelectionController.selectWindow() else {
+                return
+            }
+
+            _ = try await screenshotController.captureWindow(
+                windowID: windowID,
+                action: settings.screenshotAction,
+                format: settings.screenshotFileFormat,
+                muteSound: settings.muteScreenshotSound,
+                directory: settings.screenshotsDirectory
+            )
+        } catch {
+            showErrorAlert(
+                title: Localizer.text("Ошибка скриншота", "Screenshot Error"),
+                message: error.localizedDescription
+            )
+        }
     }
 
     private func handleAreaScreenshotHotkey() async {
@@ -438,6 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     }
 
     private func refreshMenuLocalization() {
+        windowScreenshotMenuItem?.title = Localizer.text("Скриншот окна", "Window screenshot")
         settingsMenuItem?.title = Localizer.text("Настройки", "Settings")
         checkUpdatesMenuItem?.title = Localizer.text("Проверить обновления…", "Check for updates…")
         openScreenshotsFolderMenuItem?.title = Localizer.text("Открыть папку со скриншотами", "Open screenshots folder")
@@ -450,6 +522,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
                 "Cliptara: Ctrl+` область, Ctrl+1 экран, Ctrl+2 старт/стоп, Ctrl+3 пауза/продолжить",
                 "Cliptara: Ctrl+` area, Ctrl+1 screen, Ctrl+2 start/stop, Ctrl+3 pause/resume"
             )
+        }
+    }
+
+    @objc
+    private func captureWindowScreenshot() {
+        performAfterClosingStatusMenu { [weak self] in
+            Task { @MainActor in
+                await self?.handleWindowScreenshot()
+            }
         }
     }
 
