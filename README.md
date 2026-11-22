@@ -39,6 +39,10 @@ Cliptara живет в верхней панели macOS и закрывает �
 Важно: чтобы macOS не запрашивал разрешения заново после апдейта, новые сборки должны быть подписаны одной и той же code-sign identity.
 Скрипт упаковки теперь блокирует релизную сборку без `CODESIGN_IDENTITY`.
 
+### Лицензия
+
+Код Cliptara доступен по лицензии [PolyForm Noncommercial 1.0.0](./LICENSE). Она разрешает некоммерческое использование, изменение кода и распространение копий и изменённых версий на условиях лицензии. Для коммерческого использования нужно отдельное разрешение правообладателя.
+
 ---
 
 ## English
@@ -73,3 +77,7 @@ Cliptara is a lightweight macOS menu bar app that handles screenshots, screen re
 
 Important: to keep macOS privacy permissions across updates, each new build must be signed with the same code-sign identity.
 The packaging script now blocks release packaging if `CODESIGN_IDENTITY` is missing.
+
+### License
+
+Cliptara's source code is available under the [PolyForm Noncommercial 1.0.0 license](./LICENSE). You may use, modify, and redistribute the code for noncommercial purposes under the license terms. Commercial use requires separate permission from the copyright holder.
