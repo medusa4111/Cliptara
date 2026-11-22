@@ -41,7 +41,7 @@ Cliptara живет в верхней панели macOS и закрывает �
 
 ### Лицензия
 
-Код Cliptara доступен по лицензии [PolyForm Noncommercial 1.0.0](./LICENSE). Она разрешает некоммерческое использование, изменение кода и распространение копий и изменённых версий на условиях лицензии. Для коммерческого использования нужно отдельное разрешение правообладателя.
+Исходный код Cliptara распространяется по [лицензии MIT](./LICENSE). Код можно использовать, изменять и распространять, в том числе в коммерческих целях. При распространении копий или существенных частей кода нужно сохранять уведомление об авторских правах и текст лицензии.
 
 ---
 
@@ -80,4 +80,4 @@ The packaging script now blocks release packaging if `CODESIGN_IDENTITY` is miss
 
 ### License
 
-Cliptara's source code is available under the [PolyForm Noncommercial 1.0.0 license](./LICENSE). You may use, modify, and redistribute the code for noncommercial purposes under the license terms. Commercial use requires separate permission from the copyright holder.
+Cliptara's source code is available under the [MIT License](./LICENSE). You may use, modify, and distribute the code, including for commercial purposes. When distributing copies or substantial portions of the code, keep the copyright and license notices.
