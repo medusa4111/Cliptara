@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0",
-  "build": "20",
-  "download_url": "https://github.com/medusa4111/Cliptara/releases/download/v1.6.0/Cliptara.dmg",
-  "release_notes": "Добавлена запись микрофона вместе с системным звуком или отдельно. Голос можно сохранить внутри видео или в соседнем файле M4A. / Added microphone recording, with or without system audio. Save your voice in the video or in a matching M4A file."
+  "version": "1.6.1",
+  "build": "21",
+  "download_url": "https://github.com/medusa4111/Cliptara/releases/download/v1.6.1/Cliptara.dmg",
+  "release_notes": "Через пять минут после запуска Cliptara один раз проверяет обновления. Если доступна новая версия, в меню появляется зелёный пункт с её номером. / Cliptara checks for updates once, five minutes after launch. When an update is available, a green menu item shows its version."
 }

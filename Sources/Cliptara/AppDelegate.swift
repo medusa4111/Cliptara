@@ -11,6 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     private let flashController = ScreenFlashController.shared
     private let screenRecorder = ScreenRecorder()
     private let updateManager = UpdateManager()
+    private var automaticUpdateCheck: Task<Void, Never>?
+    private var updateCheck: Task<UpdateCheckResult, Error>?
+    private var availableUpdate: RemoteUpdateManifest?
+    private var isHandlingUpdateAction = false
 
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
@@ -51,6 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
 
         refreshMenuLocalization()
         setStatusItemRecordingState(state: .idle)
+        scheduleAutomaticUpdateCheck()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        automaticUpdateCheck?.cancel()
+        updateCheck?.cancel()
     }
 
     private func buildStatusMenu() {
@@ -537,7 +547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     private func refreshMenuLocalization() {
         windowScreenshotMenuItem?.title = Localizer.text("Скриншот окна", "Window screenshot")
         settingsMenuItem?.title = Localizer.text("Настройки", "Settings")
-        checkUpdatesMenuItem?.title = Localizer.text("Проверить обновления…", "Check for updates…")
+        refreshUpdateMenuTitle()
         openScreenshotsFolderMenuItem?.title = Localizer.text("Открыть папку со скриншотами", "Open screenshots folder")
         openVideosFolderMenuItem?.title = Localizer.text("Открыть папку с видео", "Open videos folder")
         compressVideoMenuItem?.title = Localizer.text("Уменьшить размер видеофайла", "Reduce video file size")
@@ -568,8 +578,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
 
     @objc
     private func checkForUpdatesAction() {
-        Task { @MainActor in
-            await checkForUpdates(interactive: true)
+        Task { @MainActor [weak self] in
+            await self?.handleUpdateMenuAction()
         }
     }
 
@@ -621,6 +631,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
 
     func menuWillOpen(_ menu: NSMenu) {
         if menu === statusMenu {
+            refreshUpdateMenuTitle()
             isStatusMenuOpen = true
         }
     }
@@ -628,6 +639,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
     func menuDidClose(_ menu: NSMenu) {
         if menu === statusMenu {
             isStatusMenuOpen = false
+            refreshUpdateMenuTitle()
             let action = pendingStatusMenuHotkeyAction
             pendingStatusMenuHotkeyAction = nil
             if let action {
@@ -666,35 +678,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
         }
     }
 
-    private func checkForUpdates(interactive: Bool) async {
-        do {
+    private func scheduleAutomaticUpdateCheck(after delay: Duration = .seconds(300)) {
+        automaticUpdateCheck = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+            guard let self else { return }
+            self.automaticUpdateCheck = nil
+            _ = try? await self.performUpdateCheck()
+        }
+    }
+
+    private func performUpdateCheck() async throws -> UpdateCheckResult {
+        if let updateCheck { return try await updateCheck.value }
+
+        let task = Task {
             let result = try await updateManager.checkForUpdates()
+            try Task.checkCancellation()
             switch result {
             case .upToDate:
-                if interactive {
-                    showInfoAlert(
-                        title: Localizer.text("Обновления", "Updates"),
-                        message: Localizer.text("У вас уже установлена последняя версия.", "You already have the latest version.")
-                    )
-                }
+                availableUpdate = nil
+            case .updateAvailable(let update):
+                availableUpdate = update
+            }
+            if !isStatusMenuOpen { refreshUpdateMenuTitle() }
+            return result
+        }
+        updateCheck = task
+        defer { updateCheck = nil }
+        return try await task.value
+    }
+
+    private func refreshUpdateMenuTitle() {
+        guard let item = checkUpdatesMenuItem else { return }
+        if let update = availableUpdate {
+            let format = Localizer.text("Обновить до версии %@", "Update to version %@")
+            let title = String(format: format, update.version)
+            item.title = title
+            item.attributedTitle = NSAttributedString(
+                string: title,
+                attributes: [.foregroundColor: NSColor.systemGreen]
+            )
+        } else {
+            item.attributedTitle = nil
+            item.title = Localizer.text("Проверить обновления…", "Check for updates…")
+        }
+    }
+
+    private func handleUpdateMenuAction() async {
+        guard !isHandlingUpdateAction else { return }
+        isHandlingUpdateAction = true
+        defer { isHandlingUpdateAction = false }
+
+        automaticUpdateCheck?.cancel()
+        automaticUpdateCheck = nil
+        if let availableUpdate {
+            await promptAndInstall(availableUpdate)
+            return
+        }
+
+        do {
+            let result = try await performUpdateCheck()
+            switch result {
+            case .upToDate:
+                showInfoAlert(
+                    title: Localizer.text("Обновления", "Updates"),
+                    message: Localizer.text("У вас уже установлена последняя версия.", "You already have the latest version.")
+                )
             case .updateAvailable(let update):
                 await promptAndInstall(update)
             }
+        } catch is CancellationError {
+            return
         } catch {
-            if interactive {
-                showErrorAlert(
-                    title: Localizer.text("Ошибка проверки обновлений", "Update Check Error"),
-                    message: error.localizedDescription
-                )
-            }
+            showErrorAlert(
+                title: Localizer.text("Ошибка проверки обновлений", "Update Check Error"),
+                message: error.localizedDescription
+            )
         }
     }
 
     private func promptAndInstall(_ update: RemoteUpdateManifest) async {
         let notes = update.releaseNotes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let message = Localizer.text(
-            "Найдена новая версия \(update.version).\nТекущая версия: \(updateManager.currentAppVersion).",
-            "A new version \(update.version) is available.\nCurrent version: \(updateManager.currentAppVersion)."
+        let message = String(
+            format: Localizer.text(
+                "Найдена новая версия %@.\nТекущая версия: %@.",
+                "A new version %@ is available.\nCurrent version: %@."
+            ),
+            update.version,
+            updateManager.currentAppVersion
         )
         let details = notes.isEmpty ? message : "\(message)\n\n\(notes)"
 
