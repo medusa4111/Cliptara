@@ -13,7 +13,7 @@ Cliptara живет в верхней панели macOS и закрывает �
 ### Что внутри
 
 - Скриншот выбранной области, отдельного окна или всего экрана.
-- Запись экрана в один клик (старт/стоп).
+- Запись экрана с системным звуком, микрофоном или обоими источниками. Звук микрофона можно сохранить рядом с видео в отдельном файле M4A.
 - Сжатие видео до нужного размера в отдельном окне.
 - Настраиваемые параметры: язык, действие скриншота, формат файла, папки сохранения, автозапуск при входе.
 - Проверка обновлений прямо из меню приложения.
@@ -52,7 +52,7 @@ Cliptara is a lightweight macOS menu bar app that handles screenshots, screen re
 ### What it does
 
 - Captures a selected area, an individual window, or the full screen.
-- Records the screen with one start/stop action.
+- Records the screen with system audio, microphone audio, or both. Microphone audio can be saved next to the video as a separate M4A file.
 - Compresses videos to a target size in a dedicated window.
 - Lets users configure language, screenshot behavior, file format, save folders, and launch at login.
 - Supports in-app update checks from GitHub Releases.

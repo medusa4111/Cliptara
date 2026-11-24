@@ -42,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
                 self?.setStatusItemRecordingState(state: state)
             }
         }
+        screenRecorder.onRecordingFailed = { [weak self] error in
+            self?.showErrorAlert(
+                title: Localizer.text("Ошибка записи видео", "Video Recording Error"),
+                message: error.localizedDescription
+            )
+        }
 
         refreshMenuLocalization()
         setStatusItemRecordingState(state: .idle)
@@ -188,6 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
 
         controller.onVideoAudioModeChanged = { [weak self] mode in
             self?.settings.setVideoAudioMode(mode)
+        }
+
+        controller.onSeparateMicrophoneTrackChanged = { [weak self] value in
+            self?.settings.setSeparateMicrophoneTrack(value)
         }
 
         controller.onVideoShowCursorChanged = { [weak self] value in
@@ -409,6 +419,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
                     NSWorkspace.shared.open(outputURL)
                 }
                 refreshStatusItemFromRecorderState()
+                if let warning = screenRecorder.audioWarning {
+                    showErrorAlert(title: Localizer.text("Звук записи", "Recording Audio"), message: warning)
+                }
             } catch {
                 if let recorderError = error as? ScreenRecorderError, recorderError == .stopInProgress {
                     refreshStatusItemFromRecorderState()
@@ -431,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
 
             _ = try await screenRecorder.startRecording(
                 audioMode: settings.videoAudioMode,
+                separateMicrophone: settings.separateMicrophoneTrack,
                 targetBitrateKbps: settings.videoQualityPreset.targetBitrateKbps,
                 outputDirectory: settings.videosDirectory,
                 fileFormat: settings.videoFileFormat,
@@ -479,6 +493,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, @unche
 
     private func setStatusItemRecordingState(state: ScreenRecordingState) {
         guard let button = statusItem?.button else {
+            return
+        }
+
+        if screenRecorder.isPreparingMicrophone {
+            let image = NSImage(
+                systemSymbolName: "hourglass",
+                accessibilityDescription: Localizer.text("Подготовка микрофона", "Preparing microphone")
+            )
+            image?.isTemplate = false
+            button.image = image
+            button.contentTintColor = .systemOrange
+            button.title = image == nil ? "…" : ""
             return
         }
 

@@ -7,6 +7,7 @@ final class AppSettings: @unchecked Sendable {
         static let language = "appLanguage"
         static let muteScreenshotSound = "muteScreenshotSound"
         static let videoAudioMode = "videoAudioMode"
+        static let separateMicrophoneTrack = "separateMicrophoneTrack"
         static let videoFileFormat = "videoFileFormat"
         static let videoCodec = "videoCodec"
         static let videoFrameRate = "videoFrameRate"
@@ -28,6 +29,7 @@ final class AppSettings: @unchecked Sendable {
     private(set) var language: AppLanguage
     private(set) var muteScreenshotSound: Bool
     private(set) var videoAudioMode: AudioCaptureMode
+    private(set) var separateMicrophoneTrack: Bool
     private(set) var videoFileFormat: VideoFileFormat
     private(set) var videoCodec: VideoCodecOption
     private(set) var videoFrameRate: VideoFrameRateOption
@@ -69,6 +71,8 @@ final class AppSettings: @unchecked Sendable {
             videoAudioMode = .system
             defaults.set(videoAudioMode.rawValue, forKey: Keys.videoAudioMode)
         }
+
+        separateMicrophoneTrack = defaults.bool(forKey: Keys.separateMicrophoneTrack)
 
         if let raw = defaults.string(forKey: Keys.videoFileFormat),
            let parsed = VideoFileFormat(rawValue: raw) {
@@ -211,6 +215,11 @@ final class AppSettings: @unchecked Sendable {
     func setVideoAudioMode(_ mode: AudioCaptureMode) {
         videoAudioMode = mode
         defaults.set(mode.rawValue, forKey: Keys.videoAudioMode)
+    }
+
+    func setSeparateMicrophoneTrack(_ value: Bool) {
+        separateMicrophoneTrack = value
+        defaults.set(value, forKey: Keys.separateMicrophoneTrack)
     }
 
     func setVideoFileFormat(_ format: VideoFileFormat) {

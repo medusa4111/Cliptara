@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreGraphics
 import Foundation
+import OSLog
 @preconcurrency import ScreenCaptureKit
 
 enum ScreenRecordingState: Equatable {
@@ -15,6 +16,7 @@ enum ScreenRecorderError: LocalizedError, Equatable {
     case notRecording
     case notPaused
     case permissionDenied
+    case microphonePermissionDenied
     case displayNotFound
     case streamSetupFailed
     case invalidOutputFile
@@ -34,6 +36,11 @@ enum ScreenRecorderError: LocalizedError, Equatable {
                 "Нет доступа к записи экрана. Разрешите доступ в Системных настройках.",
                 "Screen Recording access is not granted. Enable it in System Settings."
             )
+        case .microphonePermissionDenied:
+            return Localizer.text(
+                "Нет доступа к микрофону. Разрешите доступ для Cliptara в разделе «Конфиденциальность и безопасность → Микрофон».",
+                "Microphone access is denied. Allow Cliptara in Privacy & Security → Microphone."
+            )
         case .displayNotFound:
             return Localizer.text("Не удалось найти экран для записи.", "Could not find a display to record.")
         case .streamSetupFailed:
@@ -51,6 +58,8 @@ enum ScreenRecorderError: LocalizedError, Equatable {
 final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCRecordingOutputDelegate {
     private struct SessionParameters {
         let audioMode: AudioCaptureMode
+        let separateMicrophone: Bool
+        let microphoneDeviceID: String?
         let targetBitrateKbps: Int
         let fileFormat: VideoFileFormat
         let codec: VideoCodecOption
@@ -60,15 +69,24 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
 
     private var stream: SCStream?
     private var recordingOutput: SCRecordingOutput?
+    private var recordingDidStart = false
+    private var recordingCompletion: Result<Void, Error>?
+    private var audioCapture: RecordingAudioCapture?
     private var activeSegmentURL: URL?
     private var finalOutputURL: URL?
     private var sessionParameters: SessionParameters?
     private var segmentURLs: [URL] = []
+    private var segmentAudio: [URL: CapturedRecordingAudio] = [:]
+    private var temporaryAudioDirectories: [URL] = []
     private var state: ScreenRecordingState = .idle
+    private var isStarting = false
     private var isStopping = false
     private var ignoreStreamStopCallback = false
 
     var onRecordingStateChanged: ((ScreenRecordingState) -> Void)?
+    var onRecordingFailed: ((Error) -> Void)?
+    private(set) var isPreparingMicrophone = false
+    private(set) var audioWarning: String?
 
     override init() {}
 
@@ -85,11 +103,12 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
     }
 
     var isStopInProgress: Bool {
-        isStopping
+        isStopping || isStarting
     }
 
     func startRecording(
         audioMode: AudioCaptureMode,
+        separateMicrophone: Bool,
         targetBitrateKbps: Int,
         outputDirectory: URL,
         fileFormat: VideoFileFormat,
@@ -97,9 +116,12 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         frameRate: VideoFrameRateOption,
         showCursor: Bool
     ) async throws -> URL {
-        if state != .idle || isStopping {
+        if state != .idle || isStopping || isStarting {
             throw ScreenRecorderError.alreadyRecording
         }
+        isStarting = true
+        defer { isStarting = false }
+        audioWarning = nil
 
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
@@ -107,14 +129,26 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             throw ScreenRecorderError.permissionDenied
         }
 
-        let finalURL = makeFinalOutputURL(directory: outputDirectory, format: fileFormat)
-        if FileManager.default.fileExists(atPath: finalURL.path) {
-            try? FileManager.default.removeItem(at: finalURL)
+        var microphoneDeviceID: String?
+        if audioMode.capturesMicrophone {
+            let authorization = AVCaptureDevice.authorizationStatus(for: .audio)
+            let allowed = authorization == .notDetermined
+                ? await AVCaptureDevice.requestAccess(for: .audio)
+                : authorization == .authorized
+            guard allowed else { throw ScreenRecorderError.microphonePermissionDenied }
+            let device = AVCaptureDevice.default(for: .audio)
+            microphoneDeviceID = device?.uniqueID
+            Logger(subsystem: "com.maksim.cliptara", category: "RecordingAudio")
+                .info("Selected microphone: \(device?.localizedName ?? "System default", privacy: .public)")
         }
+
+        let finalURL = makeFinalOutputURL(directory: outputDirectory, format: fileFormat)
 
         finalOutputURL = finalURL
         sessionParameters = SessionParameters(
             audioMode: audioMode,
+            separateMicrophone: separateMicrophone && audioMode.capturesMicrophone,
+            microphoneDeviceID: microphoneDeviceID,
             targetBitrateKbps: clampBitrate(targetBitrateKbps),
             fileFormat: fileFormat,
             codec: codec,
@@ -127,7 +161,12 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             throw ScreenRecorderError.streamSetupFailed
         }
 
-        _ = try await beginSegmentCapture(parameters: parameters)
+        do {
+            try await beginSegmentCapture(parameters: parameters)
+        } catch {
+            clearSession(removeTemporaryFiles: true)
+            throw error
+        }
         state = .recording
         notifyRecordingStateChange(.recording)
 
@@ -143,9 +182,17 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             throw ScreenRecorderError.stopInProgress
         }
 
-        try await finalizeCurrentSegmentAndStopCapture()
-        state = .paused
-        notifyRecordingStateChange(.paused)
+        isStopping = true
+        defer { isStopping = false }
+        do {
+            try await finalizeCurrentSegmentAndStopCapture()
+            state = .paused
+            notifyRecordingStateChange(.paused)
+        } catch {
+            clearSession(removeTemporaryFiles: true)
+            notifyRecordingStateChange(.idle)
+            throw error
+        }
     }
 
     func resumeRecording() async throws {
@@ -153,7 +200,7 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             throw ScreenRecorderError.notPaused
         }
 
-        if isStopping {
+        if isStopping || isStarting {
             throw ScreenRecorderError.stopInProgress
         }
 
@@ -161,7 +208,9 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             throw ScreenRecorderError.streamSetupFailed
         }
 
-        _ = try await beginSegmentCapture(parameters: parameters)
+        isStarting = true
+        defer { isStarting = false }
+        try await beginSegmentCapture(parameters: parameters)
         state = .recording
         notifyRecordingStateChange(.recording)
     }
@@ -204,11 +253,17 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         }
 
         do {
-            try await produceFinalOutput(
-                from: segmentURLs,
-                to: finalOutputURL,
-                format: parameters.fileFormat
-            )
+            if parameters.audioMode.capturesMicrophone {
+                audioWarning = try await RecordingAudioExport.save(
+                    segments: segmentURLs,
+                    audio: segmentAudio,
+                    to: finalOutputURL,
+                    format: parameters.fileFormat,
+                    separateMicrophone: parameters.separateMicrophone
+                )
+            } else {
+                try await produceFinalOutput(from: segmentURLs, to: finalOutputURL, format: parameters.fileFormat)
+            }
             cleanupTemporarySegments()
             clearSession(removeTemporaryFiles: false)
             notifyRecordingStateChange(.idle)
@@ -220,14 +275,31 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         }
     }
 
-    nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {}
+    nonisolated func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
+        let id = ObjectIdentifier(recordingOutput)
+        Task { @MainActor in
+            guard let output = self.recordingOutput, ObjectIdentifier(output) == id else { return }
+            self.recordingDidStart = true
+        }
+    }
 
-    nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {}
+    nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
+        let id = ObjectIdentifier(recordingOutput)
+        Task { @MainActor in
+            guard let output = self.recordingOutput, ObjectIdentifier(output) == id else { return }
+            self.recordingCompletion = .success(())
+        }
+    }
 
     nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: Error) {
+        let id = ObjectIdentifier(recordingOutput)
         Task { @MainActor in
+            guard let output = self.recordingOutput, ObjectIdentifier(output) == id else { return }
+            self.recordingCompletion = .failure(error)
+            guard !self.isStopInProgress else { return }
             self.clearSession(removeTemporaryFiles: true)
             self.notifyRecordingStateChange(.idle)
+            self.onRecordingFailed?(error)
         }
     }
 
@@ -238,13 +310,18 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
                 return
             }
             if let current = self.stream, ObjectIdentifier(current) == stoppedID {
+                if self.isStarting {
+                    self.recordingCompletion = .failure(error)
+                    return
+                }
                 self.clearSession(removeTemporaryFiles: true)
                 self.notifyRecordingStateChange(.idle)
+                self.onRecordingFailed?(error)
             }
         }
     }
 
-    private func beginSegmentCapture(parameters: SessionParameters) async throws -> URL {
+    private func beginSegmentCapture(parameters: SessionParameters) async throws {
         let (filter, configuration, preferredCodec) = try await makeStreamSetup(parameters: parameters)
         let segmentURL = makeSegmentOutputURL(format: parameters.fileFormat)
 
@@ -273,20 +350,56 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
 
         let recordingOutput = SCRecordingOutput(configuration: recordingConfiguration, delegate: self)
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
+        let capture = parameters.audioMode.capturesMicrophone
+            ? try RecordingAudioCapture(captureSystemAudio: parameters.audioMode.capturesSystemAudio)
+            : nil
+        self.recordingOutput = recordingOutput
+        self.stream = stream
+        recordingCompletion = nil
+        recordingDidStart = false
 
+        var streamStarted = false
+        var outputAttached = false
         do {
-            try stream.addRecordingOutput(recordingOutput)
-            try await stream.startCapture()
+            if let capture {
+                isPreparingMicrophone = true
+                notifyRecordingStateChange(state)
+                defer {
+                    isPreparingMicrophone = false
+                    notifyRecordingStateChange(state)
+                }
+                try capture.attach(to: stream)
+                try await stream.startCapture()
+                streamStarted = true
+                try await capture.waitForMicrophone(timeout: .seconds(3))
+                if let recordingCompletion { try recordingCompletion.get() }
+                let startTime = stream.synchronizationClock.map(CMClockGetTime)
+                capture.armRecording(at: startTime?.isNumeric == true ? startTime : nil)
+                try stream.addRecordingOutput(recordingOutput)
+                outputAttached = true
+                try await waitForRecordingStart()
+            } else {
+                try stream.addRecordingOutput(recordingOutput)
+                outputAttached = true
+                try await stream.startCapture()
+                streamStarted = true
+            }
+            if let recordingCompletion { try recordingCompletion.get() }
         } catch {
-            try? stream.removeRecordingOutput(recordingOutput)
-            throw ScreenRecorderError.streamSetupFailed
+            if outputAttached { try? stream.removeRecordingOutput(recordingOutput) }
+            if streamStarted { try? await stream.stopCapture() }
+            if let capture {
+                _ = await capture.finish()
+                try? FileManager.default.removeItem(at: capture.directory)
+            }
+            try? FileManager.default.removeItem(at: segmentURL)
+            clearStreamOnly()
+            throw error
         }
 
-        self.stream = stream
-        self.recordingOutput = recordingOutput
         self.activeSegmentURL = segmentURL
-
-        return segmentURL
+        audioCapture = capture
+        if let capture { temporaryAudioDirectories.append(capture.directory) }
     }
 
     private func finalizeCurrentSegmentAndStopCapture() async throws {
@@ -300,26 +413,14 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             ignoreStreamStopCallback = false
         }
 
-        do {
-            try await activeStream.stopCapture()
-        } catch {
-            clearStreamOnly()
-            throw ScreenRecorderError.streamSetupFailed
+        try await activeStream.stopCapture()
+        if let audioCapture {
+            segmentAudio[segmentURL] = await audioCapture.finish()
         }
-
-        if let output = recordingOutput {
-            try? activeStream.removeRecordingOutput(output)
-        }
-
-        let ready = await waitForFinalizedVideo(at: segmentURL, timeout: 6.0)
+        try await waitForRecordingCompletion()
+        guard await isVideoFileReady(at: segmentURL) else { throw ScreenRecorderError.invalidOutputFile }
+        segmentURLs.append(segmentURL)
         clearStreamOnly()
-
-        if ready || FileManager.default.fileExists(atPath: segmentURL.path) {
-            segmentURLs.append(segmentURL)
-            activeSegmentURL = nil
-            return
-        }
-        throw ScreenRecorderError.invalidOutputFile
     }
 
     private func produceFinalOutput(from segments: [URL], to outputURL: URL, format: VideoFileFormat) async throws {
@@ -435,12 +536,21 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
             try? FileManager.default.removeItem(at: url)
         }
         segmentURLs.removeAll()
+        for directory in temporaryAudioDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryAudioDirectories.removeAll()
+        segmentAudio.removeAll()
     }
 
     private func clearSession(removeTemporaryFiles: Bool) {
+        let unfinishedURL = activeSegmentURL
         clearStreamOnly()
         if removeTemporaryFiles {
             cleanupTemporarySegments()
+            if let unfinishedURL {
+                try? FileManager.default.removeItem(at: unfinishedURL)
+            }
             if let finalOutputURL {
                 try? FileManager.default.removeItem(at: finalOutputURL)
             }
@@ -456,18 +566,30 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
     private func clearStreamOnly() {
         stream = nil
         recordingOutput = nil
+        recordingDidStart = false
+        recordingCompletion = nil
+        audioCapture = nil
         activeSegmentURL = nil
     }
 
-    private func waitForFinalizedVideo(at url: URL, timeout: TimeInterval) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if await isVideoFileReady(at: url) {
-                return true
-            }
-            try? await Task.sleep(nanoseconds: 140_000_000)
+    private func waitForRecordingCompletion() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(6)
+        while recordingCompletion == nil, clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
         }
-        return await isVideoFileReady(at: url)
+        guard let recordingCompletion else { throw ScreenRecorderError.invalidOutputFile }
+        try recordingCompletion.get()
+    }
+
+    private func waitForRecordingStart() async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(6)
+        while !recordingDidStart, clock.now < deadline {
+            if let recordingCompletion { try recordingCompletion.get() }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        guard recordingDidStart else { throw ScreenRecorderError.streamSetupFailed }
     }
 
     private func notifyRecordingStateChange(_ state: ScreenRecordingState) {
@@ -500,9 +622,8 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
         streamConfig.sampleRate = 48_000
         streamConfig.channelCount = 2
 
-        if #available(macOS 15.0, *) {
-            streamConfig.captureMicrophone = false
-        }
+        streamConfig.captureMicrophone = parameters.audioMode.capturesMicrophone
+        streamConfig.microphoneCaptureDeviceID = parameters.microphoneDeviceID
 
         return (contentFilter, streamConfig, parameters.codec.codecType)
     }
@@ -522,8 +643,14 @@ final class ScreenRecorder: NSObject, @unchecked Sendable, SCStreamDelegate, SCR
     private func makeFinalOutputURL(directory: URL, format: VideoFileFormat) -> URL {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let fileName = "CliptaraVid_\(formatter.string(from: Date())).\(format.fileExtension)"
-        return directory.appendingPathComponent(fileName)
+        let basename = "CliptaraVid_\(formatter.string(from: Date()))"
+        let url = directory.appendingPathComponent(basename).appendingPathExtension(format.fileExtension)
+        let sidecar = RecordingAudioExport.microphoneURL(for: url)
+        if FileManager.default.fileExists(atPath: url.path) || FileManager.default.fileExists(atPath: sidecar.path) {
+            return directory.appendingPathComponent("\(basename)_\(UUID().uuidString.prefix(8))")
+                .appendingPathExtension(format.fileExtension)
+        }
+        return url
     }
 
     private func makeSegmentOutputURL(format: VideoFileFormat) -> URL {

@@ -40,6 +40,7 @@ final class SettingsWindowController: NSWindowController {
     var onVideoQualityPresetChanged: ((VideoQualityPreset) -> Void)?
     var onVideoStartDelayChanged: ((VideoStartDelayOption) -> Void)?
     var onVideoAudioModeChanged: ((AudioCaptureMode) -> Void)?
+    var onSeparateMicrophoneTrackChanged: ((Bool) -> Void)?
     var onVideoShowCursorChanged: ((Bool) -> Void)?
     var onAutoOpenRecordedVideoChanged: ((Bool) -> Void)?
     var onChooseScreenshotsDirectory: (() -> Void)?
@@ -95,6 +96,7 @@ final class SettingsWindowController: NSWindowController {
     private let videoQualityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let videoStartDelayPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let videoAudioPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let separateMicrophoneTrackCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let videoShowCursorSwitch = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let autoOpenVideoSwitch = NSButton(checkboxWithTitle: "", target: nil, action: nil)
 
@@ -112,7 +114,7 @@ final class SettingsWindowController: NSWindowController {
     ]
     private let screenshotActionOptions: [ScreenshotAction] = [.copyToClipboard, .saveToFiles, .copyAndSave]
     private let screenshotFormatOptions: [ScreenshotFileFormat] = [.png, .jpg, .webp]
-    private let videoAudioOptions: [AudioCaptureMode] = [.system, .silent]
+    private let videoAudioOptions: [AudioCaptureMode] = [.system, .systemAndMicrophone, .microphone, .silent]
     private let videoFileFormatOptions = VideoFileFormat.allCases
     private let videoCodecOptions = VideoCodecOption.allCases
     private let videoFrameRateOptions = VideoFrameRateOption.allCases
@@ -199,6 +201,8 @@ final class SettingsWindowController: NSWindowController {
         if let audioIndex = videoAudioOptions.firstIndex(of: settings.videoAudioMode) {
             videoAudioPopup.selectItem(at: audioIndex)
         }
+        separateMicrophoneTrackCheckbox.state = settings.separateMicrophoneTrack ? .on : .off
+        separateMicrophoneTrackCheckbox.isHidden = !settings.videoAudioMode.capturesMicrophone
 
         screenshotsPathField.stringValue = settings.screenshotsDirectory.path
         videosPathField.stringValue = settings.videosDirectory.path
@@ -234,6 +238,10 @@ final class SettingsWindowController: NSWindowController {
         videoQualityLabel.stringValue = Localizer.text("Качество видео:", "Video quality:")
         videoStartDelayLabel.stringValue = Localizer.text("Таймер перед стартом:", "Start countdown:")
         videoAudioLabel.stringValue = Localizer.text("Звук видео:", "Video audio:")
+        separateMicrophoneTrackCheckbox.title = Localizer.text(
+            "Писать звук микрофона в отдельную дорожку",
+            "Save microphone audio to a separate file"
+        )
         videoShowCursorLabel.stringValue = Localizer.text("Показывать курсор:", "Show cursor:")
         autoOpenVideoLabel.stringValue = Localizer.text("Открывать видео после записи:", "Open video after recording:")
         videosFolderLabel.stringValue = Localizer.text("Папка видео:", "Videos folder:")
@@ -546,7 +554,8 @@ final class SettingsWindowController: NSWindowController {
             [videoStartDelayLabel, videoStartDelayPopup],
             [videoAudioLabel, videoAudioPopup]
         ])
-        let recordingCard = makeCard(titleKey: "card.video.recording", content: recordingGrid)
+        let recordingControls = makeVerticalStack([recordingGrid, separateMicrophoneTrackCheckbox], spacing: 10)
+        let recordingCard = makeCard(titleKey: "card.video.recording", content: recordingControls)
 
         let behaviorStack = makeVerticalStack(
             [videoShowCursorSwitch, autoOpenVideoSwitch],
@@ -842,7 +851,9 @@ final class SettingsWindowController: NSWindowController {
     }
 
     private func appVersionString() -> String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        let number = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        let label = Bundle.main.object(forInfoDictionaryKey: "CliptaraVersionLabel") as? String
+        let version = label.map { "\(number) \($0)" } ?? number
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         guard !build.isEmpty, build != "0", build != version else {
             return version
@@ -940,6 +951,8 @@ final class SettingsWindowController: NSWindowController {
 
         videoAudioPopup.target = self
         videoAudioPopup.action = #selector(videoAudioPopupChanged)
+        separateMicrophoneTrackCheckbox.target = self
+        separateMicrophoneTrackCheckbox.action = #selector(separateMicrophoneTrackChanged)
 
         videoShowCursorSwitch.target = self
         videoShowCursorSwitch.action = #selector(videoShowCursorSwitchChanged)
@@ -1122,7 +1135,14 @@ final class SettingsWindowController: NSWindowController {
         guard videoAudioPopup.indexOfSelectedItem >= 0, videoAudioPopup.indexOfSelectedItem < videoAudioOptions.count else {
             return
         }
-        onVideoAudioModeChanged?(videoAudioOptions[videoAudioPopup.indexOfSelectedItem])
+        let mode = videoAudioOptions[videoAudioPopup.indexOfSelectedItem]
+        separateMicrophoneTrackCheckbox.isHidden = !mode.capturesMicrophone
+        onVideoAudioModeChanged?(mode)
+    }
+
+    @objc
+    private func separateMicrophoneTrackChanged() {
+        onSeparateMicrophoneTrackChanged?(separateMicrophoneTrackCheckbox.state == .on)
     }
 
     @objc

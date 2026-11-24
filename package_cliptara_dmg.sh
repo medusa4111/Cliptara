@@ -96,6 +96,9 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$ROOT_DIR/.build/release/Cliptara" "$APP_DIR/Contents/MacOS/Cliptara"
 chmod +x "$APP_DIR/Contents/MacOS/Cliptara"
 cp "$ICNS_PATH" "$APP_DIR/Contents/Resources/Cliptara.icns"
+for localization in "$ROOT_DIR"/assets/*.lproj; do
+  cp -R "$localization" "$APP_DIR/Contents/Resources/"
+done
 find "$APP_DIR" -name '._*' -type f -delete || true
 
 cat >"$APP_DIR/Contents/Info.plist" <<PLIST
@@ -120,13 +123,15 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.5.0</string>
+  <string>1.6.0</string>
   <key>CFBundleVersion</key>
-  <string>17</string>
+  <string>20</string>
   <key>CliptaraUpdateManifestURL</key>
   <string>$UPDATE_MANIFEST_URL</string>
   <key>LSMinimumSystemVersion</key>
   <string>15.0</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Cliptara records microphone audio when you select a video audio mode that uses the microphone.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>
@@ -138,10 +143,10 @@ if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
   echo "==> Signing app (ad-hoc)"
   echo "warning: ad-hoc signing is enabled explicitly (ALLOW_ADHOC_SIGNING=1)."
   echo "warning: macOS permissions may reset after updates."
-  codesign --force --deep --sign - "$APP_DIR"
+  codesign --force --deep --entitlements "$ROOT_DIR/Cliptara.entitlements" --sign - "$APP_DIR"
 else
   echo "==> Signing app with identity: $CODESIGN_IDENTITY"
-  codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_DIR"
+  codesign --force --deep --entitlements "$ROOT_DIR/Cliptara.entitlements" --sign "$CODESIGN_IDENTITY" "$APP_DIR"
 fi
 
 echo "==> Preparing DMG staging"
